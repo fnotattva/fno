@@ -82,19 +82,23 @@ export default function Landing() {
             <div>
               <div className="kicker text-[#F58220]">◆ Daily · 7:00 AM IST · Private Telegram</div>
               <h1 className="font-chivo font-black text-4xl lg:text-6xl mt-4 leading-[1.05] tracking-tight">
-                Trade the open<br />
-                <span className="text-[#F58220]">before it happens.</span>
+                Your morning<br />
+                <span className="text-[#F58220]">market edge.</span>
               </h1>
               <p className="mt-6 text-[#9CA3AF] max-w-lg text-base lg:text-lg">
-                A precision morning brief for Indian F&amp;O traders. Delivered to a private,
-                paid Telegram channel — every trading day, before the bell.
+                A daily market brief crafted by a <span className="text-white font-semibold">CA &amp; SEBI Registered Research Analyst</span>.
+                Written in plain English so anyone — from a first-time investor to a seasoned F&amp;O trader — can act on it before the bell.
               </p>
+              <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 border border-[#27272A] rounded-sm bg-black/40">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#00A25B]" strokeWidth={1.8} />
+                <span className="kicker text-[#F3F4F6]">Authored by a CA · SEBI Registered RA</span>
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-4 mt-10 border-t border-[#27272A]/60 pt-6">
               {[
                 { icon: Clock, k: "07:00 IST", v: "Delivery" },
-                { icon: Zap, k: "5 min read", v: "Actionable" },
+                { icon: Zap, k: "Plain English", v: "Actionable" },
                 { icon: ShieldCheck, k: "Auto-managed", v: "Access" },
               ].map((f, i) => (
                 <div key={i}>
@@ -173,13 +177,17 @@ export default function Landing() {
 
           {/* Included */}
           <div className="mt-6 panel p-6">
-            <div className="kicker mb-3">Included</div>
+            <div className="kicker mb-3">What you get every morning</div>
             <ul className="space-y-2 text-sm">
               {[
                 "Daily FnO Tattva Morning Brief (PDF)",
                 "Pre-market view on Nifty & BankNifty",
-                "OI shifts, key levels, put-call ratio",
-                "Sector rotation & event calendar",
+                "Institutional activity (FII / DII flows)",
+                "OI shifts, key levels & put-call ratio",
+                "Breakout stocks to watch",
+                "IPO watch",
+                "Upcoming events calendar",
+                "Sector rotation insights",
                 "Private Telegram channel access",
               ].map((x, i) => (
                 <li key={i} className="flex items-start gap-2">
