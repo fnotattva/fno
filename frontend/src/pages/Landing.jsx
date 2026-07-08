@@ -2,15 +2,35 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "@/lib/api";
 import { toast } from "sonner";
-import { ArrowRight, ShieldCheck, Zap, Clock, TerminalSquare, ChevronRight } from "lucide-react";
+import { ArrowRight, ShieldCheck, Zap, Clock, TerminalSquare, ChevronRight, Send, Loader2 } from "lucide-react";
 
 export default function Landing() {
   const [plan, setPlan] = useState(null);
   const [form, setForm] = useState({ name: "", mobile: "", email: "" });
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(null);
+  const [inviteState, setInviteState] = useState({ status: "idle", invite: null, msg: "" });
 
   useEffect(() => { api.get("/public/plan").then((r) => setPlan(r.data)); }, []);
+
+  const pollForInvite = async (subscriptionId) => {
+    setInviteState({ status: "polling", invite: null, msg: "Confirming payment with Razorpay…" });
+    for (let i = 0; i < 25; i++) {
+      try {
+        const { data } = await api.get(`/public/subscription-status/${subscriptionId}`);
+        if (data.invite_link) {
+          setInviteState({ status: "ready", invite: data.invite_link, msg: "" });
+          return;
+        }
+      } catch (_) { /* keep polling */ }
+      await new Promise((r) => setTimeout(r, 1200));
+    }
+    setInviteState({
+      status: "delayed",
+      invite: null,
+      msg: "Payment confirmed. Your invite link is being generated — please wait a moment.",
+    });
+  };
 
   const subscribe = async (e) => {
     e.preventDefault();
@@ -18,11 +38,8 @@ export default function Landing() {
     try {
       const { data } = await api.post("/public/checkout", form);
       if (data.is_placeholder) {
-        setSuccess({
-          message: "Subscription registered in demo mode.",
-          sub: data.subscription_id,
-        });
-        toast.info("Razorpay is in placeholder mode. In production, checkout modal opens here.");
+        setSuccess({ sub: data.subscription_id });
+        pollForInvite(data.subscription_id);
       } else if (window.Razorpay) {
         const options = {
           key: data.razorpay_key_id,
@@ -31,7 +48,11 @@ export default function Landing() {
           description: data.plan_name,
           prefill: { name: data.customer_name, email: data.customer_email, contact: data.customer_mobile },
           theme: { color: "#F58220" },
-          handler: () => setSuccess({ message: "Payment initiated. You'll receive a Telegram invite shortly.", sub: data.subscription_id }),
+          handler: (rp) => {
+            setSuccess({ sub: data.subscription_id, payment_id: rp?.razorpay_payment_id });
+            pollForInvite(data.subscription_id);
+          },
+          modal: { ondismiss: () => setLoading(false) },
         };
         new window.Razorpay(options).open();
       } else {
@@ -140,12 +161,47 @@ export default function Landing() {
             <div className="border-t border-[#27272A] my-6" />
 
             {success ? (
-              <div className="text-center py-6" data-testid="subscribe-success">
-                <div className="w-12 h-12 mx-auto rounded-full bg-[#00A25B]/10 border border-[#00A25B]/40 flex items-center justify-center mb-3">
-                  <ShieldCheck className="w-6 h-6 text-[#00A25B]" strokeWidth={1.8} />
-                </div>
-                <div className="font-chivo font-bold text-lg">{success.message}</div>
-                <div className="kicker mt-2">Ref · {success.sub}</div>
+              <div className="text-center py-4" data-testid="subscribe-success">
+                {inviteState.status === "ready" ? (
+                  <>
+                    <div className="w-14 h-14 mx-auto rounded-full bg-[#00A25B]/10 border border-[#00A25B]/40 flex items-center justify-center mb-4">
+                      <ShieldCheck className="w-7 h-7 text-[#00A25B]" strokeWidth={1.8} />
+                    </div>
+                    <div className="font-chivo font-bold text-2xl">Payment successful.</div>
+                    <div className="text-sm text-[#9CA3AF] mt-2 leading-relaxed">
+                      You're <span className="text-[#00A25B] font-semibold">ACTIVE</span>. Tap below to join the private Telegram channel.
+                    </div>
+                    <a href={inviteState.invite} target="_blank" rel="noopener noreferrer"
+                      data-testid="telegram-join-btn"
+                      className="btn-primary w-full mt-6 flex items-center gap-2 justify-center text-base py-3">
+                      <Send className="w-5 h-5" strokeWidth={2} />
+                      Join Telegram Channel
+                    </a>
+                    <p className="text-[11px] text-[#6B7280] mt-3 font-mono-plex leading-relaxed">
+                      Single-use link · join now on the device you'll use for Telegram.
+                    </p>
+                    <div className="kicker mt-6">Ref · {success.sub}</div>
+                  </>
+                ) : inviteState.status === "polling" ? (
+                  <>
+                    <div className="w-14 h-14 mx-auto rounded-full bg-[#F58220]/10 border border-[#F58220]/40 flex items-center justify-center mb-4">
+                      <Loader2 className="w-7 h-7 text-[#F58220] animate-spin" strokeWidth={1.8} />
+                    </div>
+                    <div className="font-chivo font-bold text-xl">Confirming payment…</div>
+                    <div className="text-sm text-[#9CA3AF] mt-2">Generating your channel invite. Usually takes 3-5 sec.</div>
+                    <div className="kicker mt-4">Ref · {success.sub}</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-14 h-14 mx-auto rounded-full bg-[#F58220]/10 border border-[#F58220]/40 flex items-center justify-center mb-4">
+                      <ShieldCheck className="w-7 h-7 text-[#F58220]" strokeWidth={1.8} />
+                    </div>
+                    <div className="font-chivo font-bold text-xl">Payment received.</div>
+                    <div className="text-sm text-[#9CA3AF] mt-2">{inviteState.msg}</div>
+                    <div className="kicker mt-4">Ref · {success.sub}</div>
+                    <button onClick={() => pollForInvite(success.sub)} className="btn-ghost text-xs mt-4">Check again</button>
+                  </>
+                )}
               </div>
             ) : (
               <form onSubmit={subscribe} className="space-y-4" data-testid="subscribe-form">

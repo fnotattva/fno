@@ -346,6 +346,23 @@ async def public_checkout(req: CheckoutCreateRequest):
     )
 
 
+@api.get("/public/subscription-status/{subscription_id}")
+async def public_subscription_status(subscription_id: str):
+    """Public endpoint the checkout page polls after Razorpay payment succeeds.
+    Returns the Telegram invite link ONLY if the subscription is verified paid
+    (status ACTIVE / ADMIN_COMP). Otherwise returns pending so the frontend can
+    keep polling until the webhook lands (usually 1-3 seconds)."""
+    doc = await db.subscribers.find_one({"razorpay_subscription_id": subscription_id}, {"_id": 0})
+    if not doc:
+        return {"status": "unknown", "invite_link": None}
+    active = doc.get("subscription_status") in ("ACTIVE", "ADMIN_COMP")
+    return {
+        "status": doc.get("subscription_status"),
+        "invite_link": doc.get("telegram_invite_link") if active else None,
+        "name": doc.get("name"),
+    }
+
+
 # ---------------- Razorpay Webhook ----------------
 @api.post("/webhooks/razorpay")
 async def razorpay_webhook(request: Request):
