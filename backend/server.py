@@ -356,9 +356,18 @@ async def public_subscription_status(subscription_id: str):
     if not doc:
         return {"status": "unknown", "invite_link": None}
     active = doc.get("subscription_status") in ("ACTIVE", "ADMIN_COMP")
+    invite = doc.get("telegram_invite_link")
+    # Safety net: if the user is active but somehow has no invite link, generate one lazily.
+    if active and not invite:
+        invite = await tg.create_invite_link(doc.get("name", "member"))
+        if invite:
+            await db.subscribers.update_one(
+                {"id": doc["id"]},
+                {"$set": {"telegram_invite_link": invite, "updated_at": utcnow_iso()}},
+            )
     return {
         "status": doc.get("subscription_status"),
-        "invite_link": doc.get("telegram_invite_link") if active else None,
+        "invite_link": invite if active else None,
         "name": doc.get("name"),
     }
 
@@ -446,13 +455,22 @@ async def _handle_event(event: str, payload: dict):
             })
 
     elif event == "subscription.activated":
-        await upsert({"subscription_status": "ACTIVE", "last_payment_status": "activated"})
+        upd = {"subscription_status": "ACTIVE", "last_payment_status": "activated"}
+        if doc and not doc.get("telegram_invite_link"):
+            new_invite = await tg.create_invite_link(doc.get("name", "member"))
+            if new_invite:
+                upd["telegram_invite_link"] = new_invite
+        await upsert(upd)
 
     elif event == "subscription.charged":
         next_charge_at = entity.get("charge_at") or entity.get("current_end")
         upd = {"subscription_status": "ACTIVE", "last_payment_status": "charged"}
         if next_charge_at:
             upd["next_billing_date"] = datetime.fromtimestamp(int(next_charge_at), tz=timezone.utc).isoformat()
+        if doc and not doc.get("telegram_invite_link"):
+            new_invite = await tg.create_invite_link(doc.get("name", "member"))
+            if new_invite:
+                upd["telegram_invite_link"] = new_invite
         await upsert(upd)
         await _record_payment(doc["id"] if doc else None, sub_id, payment_id, amount, "captured", entity.get("method"), "subscription.charged")
 
