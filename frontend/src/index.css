@@ -1,115 +1,153 @@
+/* FnO Tattva — Terminal-inspired dark theme */
+@import url('https://fonts.googleapis.com/css2?family=Chivo:wght@300;400;700;900&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --bg-base: #0A0A0A;
+  --bg-surface: #13161A;
+  --bg-surface-2: #1E2228;
+  --text-primary: #F3F4F6;
+  --text-secondary: #9CA3AF;
+  --text-muted: #6B7280;
+  --brand: #F58220;
+  --brand-hover: #D9731C;
+  --success: #00A25B;
+  --warning: #F58220;
+  --danger: #E92C2C;
+  --info: #3B82F6;
+  --border-default: #27272A;
+  --border-subtle: #18181B;
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 96%;
+    --card: 220 10% 8.5%;
+    --card-foreground: 0 0% 96%;
+    --popover: 220 10% 8.5%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 26 91% 55%;
+    --primary-foreground: 0 0% 5%;
+    --secondary: 240 5% 15%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 240 5% 12%;
+    --muted-foreground: 220 9% 60%;
+    --accent: 240 5% 15%;
+    --accent-foreground: 0 0% 96%;
+    --destructive: 0 82% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+    --ring: 26 91% 55%;
+    --radius: 0.25rem;
+  }
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html, body, #root {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: 'IBM Plex Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
 body {
-    margin: 0;
-    font-family:
-        -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-        "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-        sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: -1px -1px;
 }
 
-code {
-    font-family:
-        source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+.font-chivo { font-family: 'Chivo', sans-serif; }
+.font-mono-plex { font-family: 'IBM Plex Mono', monospace; }
+
+/* Sharp panels */
+.panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
 }
 
-@layer base {
-    :root {
-        --background: 0 0% 100%;
-        --foreground: 0 0% 3.9%;
-        --card: 0 0% 100%;
-        --card-foreground: 0 0% 3.9%;
-        --popover: 0 0% 100%;
-        --popover-foreground: 0 0% 3.9%;
-        --primary: 0 0% 9%;
-        --primary-foreground: 0 0% 98%;
-        --secondary: 0 0% 96.1%;
-        --secondary-foreground: 0 0% 9%;
-        --muted: 0 0% 96.1%;
-        --muted-foreground: 0 0% 45.1%;
-        --accent: 0 0% 96.1%;
-        --accent-foreground: 0 0% 9%;
-        --destructive: 0 84.2% 60.2%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 89.8%;
-        --input: 0 0% 89.8%;
-        --ring: 0 0% 3.9%;
-        --chart-1: 12 76% 61%;
-        --chart-2: 173 58% 39%;
-        --chart-3: 197 37% 24%;
-        --chart-4: 43 74% 66%;
-        --chart-5: 27 87% 67%;
-        --radius: 0.5rem;
-    }
-    .dark {
-        --background: 0 0% 3.9%;
-        --foreground: 0 0% 98%;
-        --card: 0 0% 3.9%;
-        --card-foreground: 0 0% 98%;
-        --popover: 0 0% 3.9%;
-        --popover-foreground: 0 0% 98%;
-        --primary: 0 0% 98%;
-        --primary-foreground: 0 0% 9%;
-        --secondary: 0 0% 14.9%;
-        --secondary-foreground: 0 0% 98%;
-        --muted: 0 0% 14.9%;
-        --muted-foreground: 0 0% 63.9%;
-        --accent: 0 0% 14.9%;
-        --accent-foreground: 0 0% 98%;
-        --destructive: 0 62.8% 30.6%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 14.9%;
-        --input: 0 0% 14.9%;
-        --ring: 0 0% 83.1%;
-        --chart-1: 220 70% 50%;
-        --chart-2: 160 60% 45%;
-        --chart-3: 30 80% 55%;
-        --chart-4: 280 65% 60%;
-        --chart-5: 340 75% 55%;
-    }
+.panel-hover:hover { border-color: var(--brand); transition: border-color 150ms; }
+
+.kicker {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
 }
 
-@layer base {
-    * {
-        @apply border-border;
-    }
-    body {
-        @apply bg-background text-foreground;
-    }
+/* Status badge palette */
+.badge-active { color: #00A25B; background: rgba(0,162,91,0.10); border: 1px solid rgba(0,162,91,0.35); }
+.badge-grace  { color: #F58220; background: rgba(245,130,32,0.10); border: 1px solid rgba(245,130,32,0.35); }
+.badge-expired { color: #E92C2C; background: rgba(233,44,44,0.10); border: 1px solid rgba(233,44,44,0.35); }
+.badge-cancelled { color: #9CA3AF; background: rgba(156,163,175,0.10); border: 1px solid rgba(156,163,175,0.30); }
+.badge-refunded { color: #A855F7; background: rgba(168,85,247,0.10); border: 1px solid rgba(168,85,247,0.30); }
+.badge-comp { color: #3B82F6; background: rgba(59,130,246,0.10); border: 1px solid rgba(59,130,246,0.30); }
+
+/* Buttons override */
+.btn-primary {
+  background: var(--brand); color: #0A0A0A; font-weight: 600;
+  padding: 0.55rem 1rem; border-radius: 2px; letter-spacing: 0.02em;
+  transition: background 120ms, transform 120ms;
+}
+.btn-primary:hover { background: var(--brand-hover); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-ghost {
+  background: transparent; color: var(--text-primary); border: 1px solid var(--border-default);
+  padding: 0.5rem 0.9rem; border-radius: 2px; transition: border-color 120ms, background 120ms;
+}
+.btn-ghost:hover { border-color: var(--brand); background: rgba(245,130,32,0.05); }
+
+/* Sidebar */
+.sidebar-link {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.65rem 1rem; border-left: 2px solid transparent;
+  color: var(--text-secondary); font-size: 0.9rem; font-weight: 500;
+  transition: all 120ms; text-transform: none;
+}
+.sidebar-link:hover { color: var(--text-primary); background: rgba(255,255,255,0.03); }
+.sidebar-link.active { color: #0A0A0A; background: var(--brand); border-left-color: var(--brand); font-weight: 600; }
+
+/* Table look */
+table.dense th, table.dense td { border-bottom: 1px solid var(--border-default); padding: 0.65rem 0.9rem; text-align: left; font-size: 0.85rem; }
+table.dense th { font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.18em; color: var(--text-secondary); font-weight: 500; background: rgba(255,255,255,0.02); }
+table.dense tr:hover td { background: rgba(245,130,32,0.03); }
+table.dense td.mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--brand); }
+
+/* Selection */
+::selection { background: rgba(245,130,32,0.35); color: #ffffff; }
+
+/* Marquee ticker */
+.ticker {
+  display: flex; gap: 3rem; white-space: nowrap;
+  animation: ticker-slide 40s linear infinite;
+}
+@keyframes ticker-slide {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
 }
 
-@layer base {
-    [data-debug-wrapper="true"] {
-        display: contents !important;
-    }
-
-    [data-debug-wrapper="true"] > * {
-        margin-left: inherit;
-        margin-right: inherit;
-        margin-top: inherit;
-        margin-bottom: inherit;
-        padding-left: inherit;
-        padding-right: inherit;
-        padding-top: inherit;
-        padding-bottom: inherit;
-        column-gap: inherit;
-        row-gap: inherit;
-        gap: inherit;
-        border-left-width: inherit;
-        border-right-width: inherit;
-        border-top-width: inherit;
-        border-bottom-width: inherit;
-        border-left-style: inherit;
-        border-right-style: inherit;
-        border-top-style: inherit;
-        border-bottom-style: inherit;
-        border-left-color: inherit;
-        border-right-color: inherit;
-        border-top-color: inherit;
-        border-bottom-color: inherit;
-    }
+/* Landing chart bg */
+.chart-bg {
+  background-image: url('https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?w=1600&q=80');
+  background-size: cover; background-position: center;
 }

@@ -1,56 +1,34 @@
-import { useEffect } from "react";
+import React from "react";
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
-import { HOME } from "@/constants/testIds";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Toaster } from "sonner";
+import Landing from "@/pages/Landing";
+import Login from "@/pages/Login";
+import Overview from "@/pages/Overview";
+import Subscribers from "@/pages/Subscribers";
+import Payments from "@/pages/Payments";
+import Reports from "@/pages/Reports";
+import Webhooks from "@/pages/Webhooks";
+import Notifications from "@/pages/Notifications";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
-
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          data-testid={HOME.emergentLink}
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
-
-function App() {
+export default function App() {
   return (
     <div className="App">
       <BrowserRouter>
+        <Toaster theme="dark" position="top-right" toastOptions={{ style: { background: "#13161A", border: "1px solid #27272A", color: "#F3F4F6", borderRadius: "2px", fontFamily: "IBM Plex Sans, sans-serif" } }} />
         <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
+          <Route path="/" element={<Landing />} />
+          <Route path="/admin/login" element={<Login />} />
+          <Route path="/admin" element={<ProtectedRoute><Overview /></ProtectedRoute>} />
+          <Route path="/admin/subscribers" element={<ProtectedRoute><Subscribers /></ProtectedRoute>} />
+          <Route path="/admin/payments" element={<ProtectedRoute><Payments /></ProtectedRoute>} />
+          <Route path="/admin/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+          <Route path="/admin/webhooks" element={<ProtectedRoute><Webhooks /></ProtectedRoute>} />
+          <Route path="/admin/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </div>
   );
 }
-
-export default App;
