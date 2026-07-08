@@ -63,20 +63,28 @@ export default function Subscribe() {
 
         <div className="panel p-8">
           {/* Price header */}
-          <div className="flex items-baseline justify-between border-b border-[#27272A] pb-5 mb-5">
-            <div>
+          <div className="border-b border-[#27272A] pb-5 mb-5">
+            <div className="flex items-center gap-2 mb-2">
               <div className="kicker">Monthly Subscription</div>
-              <div className="mt-1 font-chivo font-black text-4xl">
-                ₹<span className="font-mono-plex tabular-nums">{plan ? plan.amount_inr : "—"}</span>
-                <span className="text-sm font-mono-plex text-[#9CA3AF] ml-2">/mo</span>
+              <span className="text-[10px] font-mono-plex tracking-[0.18em] uppercase px-2 py-0.5 bg-[#F58220] text-black rounded-sm font-bold">70% OFF · Launch</span>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <div className="flex items-baseline gap-3">
+                <span className="font-chivo font-black text-4xl">
+                  ₹<span className="font-mono-plex tabular-nums">{plan ? plan.amount_inr : "—"}</span>
+                </span>
+                <span className="text-lg font-mono-plex text-[#6B7280] line-through decoration-[#E92C2C] decoration-2 tabular-nums">₹499</span>
+                <span className="text-sm font-mono-plex text-[#9CA3AF]">/mo</span>
               </div>
-              <div className="kicker mt-1 text-[#F58220]">Auto-renews via UPI</div>
+              <div className="text-right">
+                <div className="kicker">Delivery</div>
+                <div className="text-sm font-mono-plex mt-1">07:00 IST</div>
+              </div>
             </div>
-            <div className="text-right">
-              <div className="kicker">Delivery</div>
-              <div className="text-sm font-mono-plex mt-1">07:00 IST</div>
-              <div className="text-[10px] text-[#9CA3AF] font-mono-plex uppercase tracking-[0.2em] mt-1">Telegram</div>
+            <div className="mt-2 text-sm font-mono-plex text-[#00A25B]">
+              Just <span className="font-bold text-white">₹5 / day</span> · less than a chai ☕
             </div>
+            <div className="kicker mt-2 text-[#F58220]">Auto-renews via UPI · Cancel anytime</div>
           </div>
 
           {success ? (
