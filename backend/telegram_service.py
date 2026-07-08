@@ -89,3 +89,19 @@ async def send_direct_message(user_id: str, text: str) -> bool:
         return False
     data = await _post("sendMessage", {"chat_id": int(user_id), "text": text, "parse_mode": "HTML"})
     return bool(data.get("ok"))
+
+
+async def set_webhook(url: str, secret_token: str) -> dict:
+    """Register the inbound webhook and subscribe to chat_member updates."""
+    if _placeholder():
+        logger.warning(f"[Telegram MOCK] setWebhook to {url}")
+        return {"ok": True, "mocked": True}
+    return await _post(
+        "setWebhook",
+        {
+            "url": url,
+            "secret_token": secret_token,
+            "allowed_updates": ["chat_member", "my_chat_member", "message"],
+            "drop_pending_updates": False,
+        },
+    )

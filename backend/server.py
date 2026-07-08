@@ -475,6 +475,120 @@ async def webhook_logs(limit: int = 100, _: str = Depends(require_admin)):
     return docs
 
 
+# ---------------- Telegram inbound webhook ----------------
+TG_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
+
+
+@api.post("/webhooks/telegram")
+async def telegram_webhook(request: Request):
+    """Inbound Telegram Bot API webhook. Handles chat_member updates so we can capture
+    a subscriber's telegram_user_id + username when they join the private channel via
+    their unique invite link."""
+    provided = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    valid_sig = bool(TG_WEBHOOK_SECRET) and provided == TG_WEBHOOK_SECRET
+    payload = {}
+    try:
+        payload = await request.json()
+    except Exception:
+        pass
+
+    if not valid_sig:
+        await _log_webhook("telegram.unauthorized", False, payload, False, "bad secret token")
+        raise HTTPException(status_code=401, detail="Invalid secret token")
+
+    err: Optional[str] = None
+    event_name = "telegram." + next(
+        (k for k in ("chat_member", "my_chat_member", "message", "chat_join_request") if k in payload),
+        "unknown",
+    )
+    try:
+        await _handle_telegram_update(payload)
+    except Exception as e:
+        err = str(e)
+        logger.exception("telegram webhook handler failed")
+
+    await _log_webhook(event_name, True, payload, err is None, err)
+    return {"ok": True}
+
+
+async def _handle_telegram_update(update: dict):
+    """Extract user join events and match them back to a subscriber via invite link."""
+    cm = update.get("chat_member") or update.get("my_chat_member")
+    if not cm:
+        # Also handle when a user DMs the bot for the first time — capture their id
+        msg = update.get("message")
+        if msg:
+            frm = msg.get("from") or {}
+            if frm.get("id"):
+                # try to bind DM sender to subscriber by matching bot start payload (email)
+                text = msg.get("text", "")
+                if text.startswith("/start"):
+                    parts = text.split(maxsplit=1)
+                    if len(parts) == 2:
+                        payload_arg = parts[1].strip().lower()
+                        # payload could be an email or a subscriber id
+                        target = await db.subscribers.find_one(
+                            {"$or": [{"email": payload_arg}, {"id": payload_arg}]},
+                            {"_id": 0},
+                        )
+                        if target:
+                            await db.subscribers.update_one(
+                                {"id": target["id"]},
+                                {"$set": {
+                                    "telegram_user_id": str(frm["id"]),
+                                    "telegram_username": frm.get("username"),
+                                    "updated_at": utcnow_iso(),
+                                }},
+                            )
+        return
+
+    new_status = (cm.get("new_chat_member") or {}).get("status")
+    old_status = (cm.get("old_chat_member") or {}).get("status")
+    user = (cm.get("new_chat_member") or {}).get("user") or (cm.get("from") or {})
+    user_id = user.get("id")
+    username = user.get("username")
+    chat_id = str((cm.get("chat") or {}).get("id") or "")
+    invite = cm.get("invite_link") or {}
+    invite_url = invite.get("invite_link")
+
+    # Only care about our configured channel
+    if chat_id and os.environ.get("TELEGRAM_CHANNEL_ID") and chat_id != os.environ["TELEGRAM_CHANNEL_ID"]:
+        return
+
+    joined_now = new_status in ("member", "administrator", "creator") and old_status in ("left", "kicked", None, "restricted")
+    left_now = new_status in ("left", "kicked") and old_status in ("member", "administrator", "creator", "restricted")
+
+    if joined_now and user_id:
+        # Match to subscriber by invite_link URL
+        doc = None
+        if invite_url:
+            doc = await db.subscribers.find_one({"telegram_invite_link": invite_url}, {"_id": 0})
+        if not doc and username:
+            doc = await db.subscribers.find_one({"telegram_username": username}, {"_id": 0})
+
+        if doc:
+            await db.subscribers.update_one(
+                {"id": doc["id"]},
+                {"$set": {
+                    "telegram_user_id": str(user_id),
+                    "telegram_username": username,
+                    "telegram_joined": True,
+                    "removed_from_channel": False,
+                    "updated_at": utcnow_iso(),
+                }},
+            )
+            logger.info(f"Bound telegram user {user_id}(@{username}) to subscriber {doc.get('email')}")
+        else:
+            logger.warning(f"Telegram user {user_id}(@{username}) joined but no matching subscriber found (invite={invite_url})")
+
+    if left_now and user_id:
+        await db.subscribers.update_one(
+            {"telegram_user_id": str(user_id)},
+            {"$set": {"telegram_joined": False, "removed_from_channel": True, "updated_at": utcnow_iso()}},
+        )
+
+
+
 # ---------------- Payments ----------------
 @api.get("/payments")
 async def payments(subscriber_id: Optional[str] = None, status: Optional[str] = None, limit: int = 200, _: str = Depends(require_admin)):
@@ -620,6 +734,15 @@ async def on_start():
     scheduler.add_job(job_grace_expiry, IntervalTrigger(minutes=30), id="grace_expiry")
     scheduler.start()
     logger.info(f"Scheduler started. Daily report at {DAILY_HOUR:02d}:{DAILY_MIN:02d} IST")
+
+    # Register Telegram webhook (best effort)
+    base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+    if base and TG_WEBHOOK_SECRET:
+        try:
+            result = await tg.set_webhook(f"{base}/api/webhooks/telegram", TG_WEBHOOK_SECRET)
+            logger.info(f"Telegram setWebhook: {result}")
+        except Exception as e:
+            logger.warning(f"Telegram setWebhook failed: {e}")
 
 
 @app.on_event("shutdown")
