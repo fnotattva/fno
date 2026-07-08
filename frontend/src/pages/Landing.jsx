@@ -86,12 +86,12 @@ export default function Landing() {
                 <span className="text-[#F58220]">market edge.</span>
               </h1>
               <p className="mt-6 text-[#9CA3AF] max-w-lg text-base lg:text-lg">
-                A daily market brief crafted by a <span className="text-white font-semibold">CA &amp; SEBI Registered Research Analyst</span>.
+                A daily market brief crafted by a <span className="text-white font-semibold">Chartered Accountant &amp; SEBI Registered Research Analyst</span>.
                 Written in plain English so anyone — from a first-time investor to a seasoned F&amp;O trader — can act on it before the bell.
               </p>
               <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 border border-[#27272A] rounded-sm bg-black/40">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#00A25B]" strokeWidth={1.8} />
-                <span className="kicker text-[#F3F4F6]">Authored by a CA · SEBI Registered RA</span>
+                <span className="kicker text-[#F3F4F6]">Authored by a Chartered Accountant · SEBI Registered RA · Algo Trader</span>
               </div>
             </div>
 
@@ -202,9 +202,20 @@ export default function Landing() {
 
       {/* Footer */}
       <footer className="border-t border-[#27272A] mt-10">
-        <div className="max-w-[1400px] mx-auto px-8 py-6 flex flex-wrap items-center justify-between gap-3 text-xs text-[#6B7280]">
-          <div>© 2026 FnO Tattva · A market brief service</div>
-          <div className="font-mono-plex tracking-[0.2em] uppercase">not investment advice · educational only</div>
+        <div className="max-w-[1400px] mx-auto px-8 py-6 space-y-3 text-xs text-[#6B7280]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>© 2026 FnO Tattva · A market brief service</div>
+            <div className="font-mono-plex tracking-[0.2em] uppercase">not investment advice · educational only</div>
+          </div>
+          <div className="border-t border-[#27272A] pt-3 flex flex-wrap gap-x-6 gap-y-1 font-mono-plex text-[10.5px] uppercase tracking-[0.15em]">
+            <span>SEBI Registration No. <span className="text-[#F3F4F6]">INH000016047</span></span>
+            <span>BSE Enlistment No. <span className="text-[#F3F4F6]">6149</span></span>
+          </div>
+          <p className="text-[11px] leading-relaxed text-[#6B7280] max-w-4xl">
+            Disclaimer: Investment in securities market are subject to market risks. Read all the related documents carefully
+            before investing. Registration granted by SEBI, enlistment as an IA / RA, and certification from NISM in no way
+            guarantee performance of the intermediary or provide any assurance of returns to investors.
+          </p>
         </div>
       </footer>
     </div>

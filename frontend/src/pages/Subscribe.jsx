@@ -145,8 +145,13 @@ export default function Subscribe() {
           ))}
         </div>
 
-        <div className="text-center mt-6 text-[10px] text-[#6B7280] font-mono-plex uppercase tracking-[0.2em]">
-          Secured by Razorpay · Not investment advice
+        <div className="text-center mt-6 space-y-1.5">
+          <div className="text-[10px] text-[#6B7280] font-mono-plex uppercase tracking-[0.2em]">
+            Secured by Razorpay · Not investment advice
+          </div>
+          <div className="text-[10px] text-[#6B7280] font-mono-plex uppercase tracking-[0.15em]">
+            SEBI Reg. No. INH000016047 · BSE Enlistment No. 6149
+          </div>
         </div>
       </div>
     </div>
