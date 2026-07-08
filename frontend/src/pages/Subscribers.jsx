@@ -13,7 +13,16 @@ export default function Subscribers() {
   const [status, setStatus] = useState("ALL");
   const [showAdd, setShowAdd] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [addForm, setAddForm] = useState({ name: "", email: "", mobile: "", amount: 999, notes: "" });
+  const [planAmount, setPlanAmount] = useState(149);
+  const [addForm, setAddForm] = useState({ name: "", email: "", mobile: "", amount: 149, notes: "" });
+
+  useEffect(() => {
+    api.get("/public/plan").then((r) => {
+      const amt = r.data?.amount_inr ?? 149;
+      setPlanAmount(amt);
+      setAddForm((f) => ({ ...f, amount: amt }));
+    });
+  }, []);
 
   const load = async () => {
     const { data } = await api.get("/subscribers", { params: { q, status } });
@@ -27,7 +36,7 @@ export default function Subscribers() {
       await api.post("/subscribers", { ...addForm, subscription_status: "ADMIN_COMP" });
       toast.success("Subscriber added");
       setShowAdd(false);
-      setAddForm({ name: "", email: "", mobile: "", amount: 999, notes: "" });
+      setAddForm({ name: "", email: "", mobile: "", amount: planAmount, notes: "" });
       load();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Failed to add");

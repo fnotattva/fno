@@ -44,7 +44,8 @@ export default function Landing() {
     }
   };
 
-  const price = plan?.amount_inr ?? 999;
+  const price = plan?.amount_inr;
+  const planLoaded = plan != null;
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-[#F3F4F6]">
@@ -113,7 +114,7 @@ export default function Landing() {
               <div>
                 <div className="kicker">Monthly Plan</div>
                 <div className="mt-1 font-chivo font-black text-4xl">
-                  ₹<span className="font-mono-plex tabular-nums">{price}</span>
+                  ₹<span className="font-mono-plex tabular-nums">{planLoaded ? price : "—"}</span>
                   <span className="text-sm font-mono-plex text-[#9CA3AF] ml-2">/mo</span>
                 </div>
               </div>
