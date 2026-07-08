@@ -1,0 +1,95 @@
+{
+  "theme": "Dark",
+  "archetype": "4 (Swiss & High-Contrast / Terminal Variant)",
+  "emotional_tone": "Premium, data-dense, confident, high-frequency trading terminal feel",
+  "typography": {
+    "heading_font": "Chivo, sans-serif",
+    "body_font": "IBM Plex Sans, sans-serif",
+    "monospace_font": "IBM Plex Mono, monospace",
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl font-black tracking-tight",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-semibold tracking-tight",
+      "h4": "text-lg sm:text-xl font-semibold",
+      "body": "text-base leading-relaxed",
+      "small_labels": "text-xs font-mono uppercase tracking-[0.2em]",
+      "data_numbers": "text-base font-mono tabular-nums"
+    },
+    "font_imports": [
+      "@import url('https://fonts.googleapis.com/css2?family=Chivo:wght@300;400;700;900&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');"
+    ]
+  },
+  "colors": {
+    "background": {
+      "base": "#0A0A0A",
+      "surface": "#13161A",
+      "surface_hover": "#1E2228"
+    },
+    "text": {
+      "primary": "#F3F4F6",
+      "secondary": "#9CA3AF",
+      "muted": "#6B7280"
+    },
+    "brand": {
+      "primary": "#F58220",
+      "primary_hover": "#D9731C"
+    },
+    "semantic": {
+      "success": "#00A25B",
+      "warning": "#F58220",
+      "danger": "#E92C2C",
+      "info": "#3B82F6"
+    },
+    "border": {
+      "default": "#27272A",
+      "subtle": "#18181B",
+      "active": "#F58220"
+    }
+  },
+  "spacing_and_layout": {
+    "philosophy": "Data-dense, flat surfaces, asymmetric grids.",
+    "container_padding": "p-6 md:p-8",
+    "dashboard_grid": "grid-cols-1 md:grid-cols-4 lg:grid-cols-12 gap-4",
+    "surface_style": "Grid Borders (Technical look). 1px solid borders, no soft shadows. Sharp corners (rounded-sm or rounded-none).",
+    "alignment": "Left-aligned strictly for data tables and dense content.",
+    "button_style": "Flat, 1px border, rectangular. Active state: bg-amber-500 text-black."
+  },
+  "components": {
+    "navigation": "Left sidebar for dashboard with visible grid lines. High contrast amber indicator for active tab.",
+    "tables": "Dense rows, monospace fonts for all numerical data and dates (IBM Plex Mono). 1px bottom border for rows. Use tabular-nums utility.",
+    "cards": "Flat background (#13161A), 1px solid border (#27272A), sharp corners. No shadow.",
+    "status_badges": "Minimalist. For ACTIVE: text-[#00A25B] bg-[#00A25B]/10 border border-[#00A25B]/20. For EXPIRED: text-[#E92C2C] bg-[#E92C2C]/10 border border-[#E92C2C]/20.",
+    "inputs": "Shadcn inputs with custom styling: bg-transparent, border-gray-800, focus:border-amber-500, focus:ring-1 focus:ring-amber-500.",
+    "charts_kpis": "Value in large monospace font. Small subtitle in uppercase IBM Plex Sans. Use step-up surface colors for elevation."
+  },
+  "motion": {
+    "hover_states": "Crisp transitions. Borders light up (e.g., border-amber-500) on hover instead of shadow lift.",
+    "page_transitions": "Instant or subtle 150ms fade. Power-user tools shouldn't have slow animations."
+  },
+  "assets": {
+    "icons": {
+      "library": "lucide-react",
+      "style": "Stroke width 1.5, sharp and geometric."
+    },
+    "images": [
+      {
+        "url": "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f",
+        "category": "landing_page_hero_background",
+        "description": "Dark stock market trading chart. Use with a heavy dark overlay (bg-black/80) to ensure text readability."
+      }
+    ]
+  },
+  "accessibility": {
+    "contrast": "Text must meet WCAG AA standards. Ensure amber (#F58220) and green (#00A25B) have enough contrast against #0A0A0A.",
+    "testing_attributes": "All interactive elements MUST include data-testid attributes (e.g., data-testid='login-submit-btn')."
+  },
+  "instructions_to_main_agent": [
+    "Apply a global dark theme by default (no light mode toggle required as this is a terminal-inspired tool).",
+    "Use Chivo for headings, IBM Plex Sans for body, and IBM Plex Mono for all numerical data, amounts, and dates in the dashboard.",
+    "For the Landing Page: Implement an asymmetric split layout. Left side: value proposition with the chart image background (heavy dark overlay). Right side: clean, high-contrast checkout card.",
+    "For the Dashboard: Build a dense 'Control Room' grid layout. Avoid heavy paddings inside data tables; maximize screen real estate.",
+    "Use sharp corners (rounded-sm or none) for all Shadcn components (cards, buttons, inputs) to match the technical trading vibe.",
+    "Never use generic purple/violet gradients.",
+    "Add 'tabular-nums' class to all numerical data cells."
+  ]
+}
