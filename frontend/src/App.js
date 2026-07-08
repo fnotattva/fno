@@ -3,6 +3,7 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import Landing from "@/pages/Landing";
+import Subscribe from "@/pages/Subscribe";
 import Login from "@/pages/Login";
 import Overview from "@/pages/Overview";
 import Subscribers from "@/pages/Subscribers";
@@ -19,6 +20,7 @@ export default function App() {
         <Toaster theme="dark" position="top-right" toastOptions={{ style: { background: "#13161A", border: "1px solid #27272A", color: "#F3F4F6", borderRadius: "2px", fontFamily: "IBM Plex Sans, sans-serif" } }} />
         <Routes>
           <Route path="/" element={<Landing />} />
+          <Route path="/subscribe" element={<Subscribe />} />
           <Route path="/admin/login" element={<Login />} />
           <Route path="/admin" element={<ProtectedRoute><Overview /></ProtectedRoute>} />
           <Route path="/admin/subscribers" element={<ProtectedRoute><Subscribers /></ProtectedRoute>} />
