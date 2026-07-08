@@ -87,7 +87,7 @@ export default function Landing() {
               </h1>
               <p className="mt-6 text-[#9CA3AF] max-w-lg text-base lg:text-lg">
                 A daily market brief crafted by a <span className="text-white font-semibold">Chartered Accountant &amp; SEBI Registered Research Analyst</span>.
-                Written in plain English so anyone — from a first-time investor to a seasoned F&amp;O trader — can act on it before the bell.
+                Shown in a very simple format so anyone — from a first-time investor to a seasoned F&amp;O trader — can act on it before the bell.
               </p>
               <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 border border-[#27272A] rounded-sm bg-black/40">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#00A25B]" strokeWidth={1.8} />
@@ -98,7 +98,7 @@ export default function Landing() {
             <div className="grid grid-cols-3 gap-4 mt-10 border-t border-[#27272A]/60 pt-6">
               {[
                 { icon: Clock, k: "07:00 IST", v: "Delivery" },
-                { icon: Zap, k: "Plain English", v: "Actionable" },
+                { icon: Zap, k: "Simple Format", v: "Actionable" },
                 { icon: ShieldCheck, k: "Auto-managed", v: "Access" },
               ].map((f, i) => (
                 <div key={i}>
