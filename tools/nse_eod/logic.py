@@ -150,11 +150,11 @@ def research_candidate(symbol, future, chain, tech, asof):
         sl = tech["high"] + 0.12 * atr
         gap_limit = entry - 0.5 * atr
     risk = abs(entry - sl)
-    if not (0.55 * atr <= risk <= 3.0 * atr) or abs(entry - price) > 1.6 * atr or sl <= 0:
+    if (not (0.55 * atr <= risk <= 3.0 * atr) or abs(entry - price) > 1.6 * atr\n            or sl <= 0 or risk / entry > 0.045):
         return None
     t1 = entry + side * 2.55 * risk
     t2 = entry + side * 3.55 * risk
-    cost = entry * 0.0015  # modelled round-trip impact, not exact client charges
+    if abs(t1 - entry) / entry > 0.11: return None  # 1-5 session horizon: avoid impractically distant targets\n    cost = entry * 0.0015  # modelled round-trip impact, not exact client charges
     net_rr = (abs(t1-entry) - cost) / (risk + cost)
     if net_rr < 2: return None
     if direction == "LONG":
@@ -164,14 +164,14 @@ def research_candidate(symbol, future, chain, tech, asof):
         wall = chain["near_put_wall"]
         if wall is not None and t1 < wall < entry: return None
 
-    futures_score = 26 if regime in ("LONG BUILDUP", "SHORT BUILDUP") else 14
+    futures_score = 26 if regime in ("LONG BUILDUP", "SHORT BUILDUP") else 8
     futures_score += 8 if abs(opct) >= 5 else 5 if abs(opct) >= 2 else 2
     futures_score += 6 if abs(fpct) >= 1 else 4 if abs(fpct) >= 0.5 else 1
     futures_score = min(futures_score, 40)
     options_score = 0
     supportive = chain["near_put_wall"] if direction == "LONG" else chain["near_call_wall"]
     if supportive and abs(price-supportive)/price <= 0.10: options_score += 10
-    options_score += 9  # opposing wall obstruction has already been screened
+    opposing = chain["near_call_wall"] if direction == "LONG" else chain["near_put_wall"]\n    options_score += 9 if opposing is not None else 3
     if direction == "LONG":
         if chain["pe_oi_change"] > chain["ce_oi_change"]: options_score += 7
         if 0.75 <= chain["pcr"] <= 1.9: options_score += 5
