@@ -34,6 +34,23 @@ class EODRulesTests(unittest.TestCase):
         self.assertGreaterEqual(pain["strike"], 95)
         self.assertLessEqual(pain["strike"], 105)
 
+    def test_full_chain_payout_vs_bruteforce(self):
+        rows = []
+        strikes = list(range(80, 121, 2))
+        for k in strikes:
+            rows.extend([
+                {"StrkPric":str(k),"OptnTp":"CE","OpnIntrst":str((k*17)%97 + 2),"ChngInOpnIntrst":"1"},
+                {"StrkPric":str(k),"OptnTp":"PE","OpnIntrst":str((k*23)%89 + 2),"ChngInOpnIntrst":"1"}])
+        computed = max_pain(rows)
+        self.assertIsNotNone(computed)
+        brute = {settle:sum(max(settle-float(r["StrkPric"]),0)*float(r["OpnIntrst"])
+                       if r["OptnTp"]=="CE" else
+                       max(float(r["StrkPric"])-settle,0)*float(r["OpnIntrst"])
+                       for r in rows) for settle in strikes}
+        expected = min(strikes,key=lambda settle:brute[settle])
+        self.assertEqual(computed["strike"], expected)
+        self.assertAlmostEqual(computed["payout_price_units"], brute[expected], places=3)
+
     def test_chain_walls_and_pcr(self):
         rows = []
         for k in range(80,105):
