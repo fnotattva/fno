@@ -58,7 +58,7 @@ class EODRulesTests(unittest.TestCase):
         m=tech_metrics(history)
         self.assertGreater(m["ema20"],100)
         self.assertGreater(m["atr14"],0)
-        self.assertLess(m["prev5_high"],history[-1]["HghPric"]+1)
+        self.assertLess(m["prev5_high"],float(history[-1]["HghPric"])+1)
         self.assertEqual(m["sessions"],28)
 
     def test_signal_requires_real_futures_oi(self):
