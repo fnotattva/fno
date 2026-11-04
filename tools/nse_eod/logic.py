@@ -155,7 +155,8 @@ def research_candidate(symbol, future, chain, tech, asof):
         return None
     t1 = entry + side * 2.55 * risk
     t2 = entry + side * 3.55 * risk
-    if abs(t1 - entry) / entry > 0.11: return None  # 1-5 session horizon: avoid impractically distant targets\n    cost = entry * 0.0015  # modelled round-trip impact, not exact client charges
+    if abs(t1 - entry) / entry > 0.11: return None  # 1-5 session horizon: avoid impractically distant targets
+    cost = entry * 0.0015  # modelled round-trip impact, not exact client charges
     net_rr = (abs(t1-entry) - cost) / (risk + cost)
     if net_rr < 2: return None
     if direction == "LONG":
@@ -172,7 +173,8 @@ def research_candidate(symbol, future, chain, tech, asof):
     options_score = 0
     supportive = chain["near_put_wall"] if direction == "LONG" else chain["near_call_wall"]
     if supportive and abs(price-supportive)/price <= 0.10: options_score += 10
-    opposing = chain["near_call_wall"] if direction == "LONG" else chain["near_put_wall"]\n    options_score += 9 if opposing is not None else 3
+    opposing = chain["near_call_wall"] if direction == "LONG" else chain["near_put_wall"]
+    options_score += 9 if opposing is not None else 3
     if direction == "LONG":
         if chain["pe_oi_change"] > chain["ce_oi_change"]: options_score += 7
         if 0.75 <= chain["pcr"] <= 1.9: options_score += 5
