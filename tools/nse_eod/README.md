@@ -48,3 +48,6 @@ The secondary list is algorithmically generated and audited for patterns; it is 
 - No API keys, no tokens, no paid connection, no passwords.
 - NSE HTTPS host validation, download and ZIP decompression size caps, data/date/schema checks, limited workflow permissions (`contents: read`).
 - Github workflows cannot safely guarantee downloads forever. Failed/incomplete exchange files trigger NO VERIFIED TRADE.
+
+## Missing evening report — operational check
+If a ChatGPT report has not appeared, confirm the GitHub Actions workflow has actually run on the correct NSE trading day. GitHub cron is **best effort** and a successful code-change CI run is not evidence that a scheduled run fired. On demand, use GitHub Actions → FnO Tattva NSE EOD OI research → Run workflow (main), leave market_date blank. Confirm the resulting `report.json` market_date before circulating picks. The ChatGPT task is a separate scheduled delivery; both systems must actually execute. Never substitute a prior-day archived replay for a current signal.
