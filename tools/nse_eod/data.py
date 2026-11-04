@@ -6,6 +6,7 @@ import zipfile
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
 import http.cookiejar
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
@@ -32,7 +33,7 @@ def _download(url: str, timeout: int = 16) -> bytes:
     request = urllib.request.Request(url, headers=HEADERS)
     try:
         with opener.open(request, timeout=timeout) as response:
-            host = urllib.request.urlparse(response.geturl()).hostname or ""
+            host = urllib.parse.urlsplit(response.geturl()).hostname or ""
             if not (host == "nseindia.com" or host.endswith(".nseindia.com")):
                 raise Unavailable("Redirect outside NSE")
             blob = response.read(MAX_BYTES + 1)
