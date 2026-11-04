@@ -65,7 +65,10 @@ class EODRulesTests(unittest.TestCase):
         tech={"close":100,"atr14":2,"high":101,"low":99,"ema20":95,
               "prev5_high":99,"prev5_low":92,"open":99,
               "cash_volume":100000,"rvol20":1.8}
-        chain={"near_put_wall":95,"near_call_wall":120,"max_pain":106,"pcr":1.2,
+        chain={"near_put_wall":95,"near_call_wall":120,"max_pain":106,
+               "previous_max_pain":105, "previous_pcr":1.1,
+               "previous_put_wall":94,"previous_call_wall":120,"put_wall_shift":1,"call_wall_shift":0,
+               "pcr":1.2,
                "pe_oi_change":3000,"ce_oi_change":-1000,
                "put_wall":95,"call_wall":120}
         fut={"SttlmPric":"101.5","PrvsClsgPric":"99.5","UndrlygPric":"100",
