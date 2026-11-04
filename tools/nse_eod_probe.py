@@ -81,6 +81,8 @@ for date in DATES:
                 item["attempts"].append({"mode": mode, "error": f"{type(exc).__name__}: {str(exc)[:180]}"})
         results["tests"].append(item)
         print(f"{segment} {date}: {'VALID ZIP' if item['valid'] else 'UNAVAILABLE'} | {item['attempts'][-1]}")
+        if item["valid"]:
+            print(f"SCHEMA {segment} {date}: {item['csv']['csv_columns']}")
         time.sleep(1)
 
 Path("probe_results.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
