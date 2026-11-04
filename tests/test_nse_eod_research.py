@@ -4,6 +4,7 @@ from datetime import date
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "nse_eod"))
 from logic import max_pain, chain_metrics, classify_futures, tech_metrics, research_candidate, wall_premium_proxy
+from technicals import ema_series, sma_series, wilder_rsi, macd_series, technical_confirmation
 
 class EODRulesTests(unittest.TestCase):
     def test_four_regimes(self):
@@ -76,7 +77,7 @@ class EODRulesTests(unittest.TestCase):
 
     def test_trend_and_atr(self):
         history=[]
-        for k in range(28):
+        for k in range(75):
             c=100+k
             history.append({"ClsPric":str(c),"HghPric":str(c+1),
                             "LwPric":str(c-1),"OpnPric":str(c-.5),
@@ -85,10 +86,63 @@ class EODRulesTests(unittest.TestCase):
         self.assertGreater(m["ema20"],100)
         self.assertGreater(m["atr14"],0)
         self.assertLess(m["prev5_high"],float(history[-1]["HghPric"])+1)
-        self.assertEqual(m["sessions"],28)
+        self.assertEqual(m["sessions"],75)
+        self.assertIsNotNone(m["ema50"])
+        self.assertIsNotNone(m["sma50"])
+        self.assertGreater(m["rsi14"],0)
+        self.assertEqual(len(m["fib_levels60"]),7)
+
+    def test_indicators_use_completed_history_only(self):
+        rising = [100 + i*0.4 + (i % 3)*0.1 for i in range(75)]
+        self.assertEqual(len(ema_series(rising,50)),75)
+        self.assertEqual(sma_series([1,2,3,4],3),[None,None,2.0,3.0])
+        self.assertGreater(wilder_rsi(rising)[-1],70)
+        macd, signal, hist = macd_series(rising)
+        self.assertIsNotNone(hist[-1])
+        self.assertIsNotNone(signal[-1])
+        self.assertIsNotNone(macd[-1])
+
+    def test_technical_rejects_mixed_or_exhausted(self):
+        template={"close":100,"ema20":95,"ema50":90,"sma20":96,"sma50":92,
+                  "ema20_prev":94,"rsi14":59,"macd":1.3,"macd_signal":0.7,
+                  "macd_hist":0.6,"rvol20":1.6,"prev5_high":99,
+                  "prev5_low":89,"ema_crossover":None}
+        self.assertTrue(technical_confirmation(template,"LONG")["approved"])
+        self.assertFalse(technical_confirmation({**template,"rsi14":79},"LONG")["approved"])
+        self.assertFalse(technical_confirmation({**template,"ema20":88},"LONG")["approved"])
+        self.assertFalse(technical_confirmation({**template,"macd_hist":-0.2},"LONG")["approved"])
+        self.assertFalse(technical_confirmation({**template,"rvol20":0.5},"LONG")["approved"])
+
+    def test_short_covering_does_not_become_top_tier_recommendation(self):
+        tech={"close":100,"atr14":2,"high":101,"low":99,"ema20":95,
+              "ema50":90,"sma20":96,"sma50":92,"ema20_prev":94,
+              "rsi14":59,"macd":1.3,"macd_signal":0.7,"macd_hist":0.6,
+              "rvol20":1.6,"prev5_high":99,"prev5_low":90,
+              "ema_crossover":{"direction":"BULLISH","sessions_ago":1},
+              "sma_crossover":None,"fib_swing_high60":108,"fib_swing_low60":80,
+              "fib_support":98,"fib_resistance":101,"fib_levels60":{"0.5":94},
+              "open":99,"cash_volume":200000}
+        chain={"near_put_wall":96,"near_call_wall":122,"max_pain":105,
+               "previous_max_pain":104,"previous_pcr":1.0,
+               "previous_put_wall":95,"previous_call_wall":122,
+               "put_wall_shift":1,"call_wall_shift":0,"pcr":1.15,
+               "pe_oi_change":3000,"ce_oi_change":-2000,
+               "put_wall":96,"call_wall":122,
+               "put_wall_premium_proxy":{"label":"WRITING-LIKE","oi_change":500},
+               "call_wall_premium_proxy":{"label":"MIXED","oi_change":0}}
+        future={"SttlmPric":"101.5","PrvsClsgPric":"99.5","UndrlygPric":"100",
+                "OpnIntrst":"280000","ChngInOpnIntrst":"-20000",
+                "TtlTradgVol":"2000","XpryDt":"2026-11-23"}
+        self.assertIsNone(research_candidate("DEMO",future,chain,tech,date(2026,11,3)))
 
     def test_signal_requires_real_futures_oi(self):
         tech={"close":100,"atr14":2,"high":101,"low":99,"ema20":95,
+              "ema50":90, "sma20":96, "sma50":92, "ema20_prev":94,
+              "rsi14":58, "macd":1.5, "macd_signal":1.0, "macd_hist":0.5,
+              "ema_crossover":{"direction":"BULLISH","sessions_ago":2},
+              "sma_crossover":None, "fib_swing_high60":103,
+              "fib_swing_low60":85, "fib_support":98, "fib_resistance":101,
+              "fib_levels60":{"0.5":94,"0.618":96.12},
               "prev5_high":99,"prev5_low":92,"open":99,
               "cash_volume":100000,"rvol20":1.8}
         chain={"near_put_wall":95,"near_call_wall":120,"max_pain":106,
