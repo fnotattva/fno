@@ -139,7 +139,8 @@ def render(data):
         lines += [f"## {n}. {c['symbol']} — {c['direction']} WATCH ({c['score']}/100 evidence score)",
                   f"- Futures {c['futures_expiry']}: {c['regime']}; settlement ₹{c['futures_settlement']:.2f} ({c['futures_change_pct']:+.2f}%), OI {c['futures_oi']:,.0f} ({c['futures_oi_change_pct']:+.2f}%; change {c['futures_oi_change']:+,.0f}).",
                   f"- Spot close ₹{c['cash_close']:.2f}; relative volume {c['cash_rvol20']:.2f}x, EMA20 ₹{c['ema20']:.2f}, ATR14 ₹{c['atr14']:.2f}.",
-                  f"- Options expiry {c['options_expiry']}: PE wall ₹{c['put_wall']:g}, CE wall ₹{c['call_wall']:g}, max pain ₹{c['max_pain']:g}, PCR {c['pcr']:.3f}; PE/CE OI change {c['pe_oi_change']:+,}/{c['ce_oi_change']:+,}.",
+                  f"- Options expiry {c['options_expiry']}: max PE OI wall ₹{c['put_wall']:g} (previous ₹{c['previous_put_wall']:g}), max CE OI wall ₹{c['call_wall']:g} (previous ₹{c['previous_call_wall']:g}); nearest relevant walls PE ₹{c['near_put_wall'] or 0:g} / CE ₹{c['near_call_wall'] or 0:g}.",
+                  f"- Full-chain max pain ₹{c['max_pain']:g} (previous ₹{c['previous_max_pain'] or 0:g}), PCR {c['pcr']:.3f} (previous {c['previous_pcr'] or 0:.3f}); PE/CE OI change {c['pe_oi_change']:+,}/{c['ce_oi_change']:+,}.",
                   f"- **Next-session CASH reference trigger:** ₹{c['entry_trigger']:.2f}; hard SL ₹{c['stop_loss']:.2f}; T1 ₹{c['target_1']:.2f}; T2 ₹{c['target_2']:.2f}; modelled net T1 R:R {c['modelled_net_rr_t1']:.2f}:1 (assumed 0.15% round-trip costs).",
                   f"- Wait for confirmed 5-minute breakout/breakdown next session; do not chase an opening gap beyond ₹{c['gap_skip_level']:.2f}. Hold at most 1–5 sessions; recheck EOD OI and close. No trades are executed.",
                   ""]
