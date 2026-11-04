@@ -78,11 +78,29 @@ def chain_metrics(rows, spot):
     resist_candidates = [(k, v["CE"]) for k, v in valid if k >= spot and k <= spot * 1.20 and v["CE"] > 0]
     near_put = max(support_candidates, key=lambda kv: kv[1])[0] if support_candidates else None
     near_call = max(resist_candidates, key=lambda kv: kv[1])[0] if resist_candidates else None
+    previous_rows = []
+    previous_oi = {}
+    for strike, v in by_strike.items():
+        old_ce = max(0.0, v["CE"] - v["ce_delta"])
+        old_pe = max(0.0, v["PE"] - v["pe_delta"])
+        previous_oi[strike] = {"CE": old_ce, "PE": old_pe}
+        for side, amount in (("CE", old_ce), ("PE", old_pe)):
+            previous_rows.append({"StrkPric": str(strike), "OptnTp": side, "OpnIntrst": str(amount)})
+    historical_pain = max_pain(previous_rows)
+    previous_put_wall = max(previous_oi, key=lambda k: previous_oi[k]["PE"]) if previous_oi else None
+    previous_call_wall = max(previous_oi, key=lambda k: previous_oi[k]["CE"]) if previous_oi else None
+    prev_ce = sum(v["CE"] for v in previous_oi.values())
+    prev_pe = sum(v["PE"] for v in previous_oi.values())
     return {
         "strike_count": len(valid), "ce_oi": round(ce), "pe_oi": round(pe),
-        "pcr": round(pe / ce, 3), "call_wall": call_wall, "put_wall": put_wall,
+        "pcr": round(pe / ce, 3), "previous_pcr": round(prev_pe / prev_ce, 3) if prev_ce else None,
+        "call_wall": call_wall, "put_wall": put_wall,
+        "previous_call_wall": previous_call_wall, "previous_put_wall": previous_put_wall,
+        "call_wall_shift": call_wall - previous_call_wall if previous_call_wall else None,
+        "put_wall_shift": put_wall - previous_put_wall if previous_put_wall else None,
         "near_call_wall": near_call, "near_put_wall": near_put,
-        "max_pain": pain["strike"], "max_pain_payout_units": pain["payout_price_units"],
+        "max_pain": pain["strike"], "previous_max_pain": historical_pain["strike"] if historical_pain else None,
+        "max_pain_payout_units": pain["payout_price_units"],
         "ce_oi_change": round(sum(v["ce_delta"] for _, v in valid)),
         "pe_oi_change": round(sum(v["pe_delta"] for _, v in valid)),
     }
