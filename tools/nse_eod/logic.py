@@ -56,6 +56,25 @@ def classify_futures(price_change_pct, oi_change_pct, epsilon_price=0.05, epsilo
     if price_change_pct > 0 and oi_change_pct < 0: return "SHORT COVERING"
     return "LONG UNWINDING"
 
+def wall_premium_proxy(rows, strike, side):
+    """Daily OI-plus-premium pattern; never establishes actual writing direction."""
+    eligible = [r for r in rows if r.get("OptnTp") == side
+                and abs(num(r.get("StrkPric")) - strike) < 0.001]
+    if not eligible: return {"label": "NO DATA", "oi_change": 0, "premium_pct": None}
+    row = max(eligible, key=lambda r: num(r.get("OpnIntrst")))
+    current = num(row.get("ClsPric"))
+    previous = num(row.get("PrvsClsgPric"))
+    oi_delta = num(row.get("ChngInOpnIntrst"))
+    volume = num(row.get("TtlTradgVol"))
+    if current <= 0 or previous <= 0 or volume <= 0:
+        return {"label": "INSUFFICIENT PREMIUM DATA", "oi_change": round(oi_delta), "premium_pct": None}
+    premium_change = pct(current, previous)
+    label = "MIXED / NO CONFIRMATION"
+    if oi_delta > 0 and premium_change < -0.5: label = "WRITING-LIKE"
+    elif oi_delta < 0 and premium_change > 0.5: label = "UNWINDING/COVERING-LIKE"
+    return {"label": label, "oi_change": round(oi_delta),
+            "premium_pct": round(premium_change, 2)}
+
 def chain_metrics(rows, spot):
     by_strike = defaultdict(lambda: {"CE": 0.0, "PE": 0.0, "ce_delta": 0.0, "pe_delta": 0.0})
     for row in rows:
@@ -97,6 +116,8 @@ def chain_metrics(rows, spot):
         "call_wall": call_wall, "put_wall": put_wall,
         "previous_call_wall": previous_call_wall, "previous_put_wall": previous_put_wall,
         "call_wall_shift": call_wall - previous_call_wall if previous_call_wall else None,
+        "put_wall_premium_proxy": wall_premium_proxy(rows, put_wall, "PE"),
+        "call_wall_premium_proxy": wall_premium_proxy(rows, call_wall, "CE"),
         "put_wall_shift": put_wall - previous_put_wall if previous_put_wall else None,
         "near_call_wall": near_call, "near_put_wall": near_put,
         "max_pain": pain["strike"], "previous_max_pain": historical_pain["strike"] if historical_pain else None,
@@ -223,6 +244,8 @@ def research_candidate(symbol, future, chain, tech, asof):
         "previous_put_wall": chain["previous_put_wall"],
         "previous_call_wall": chain["previous_call_wall"],
         "put_wall_shift": chain["put_wall_shift"], "call_wall_shift": chain["call_wall_shift"],
+        "put_wall_premium_proxy": chain["put_wall_premium_proxy"],
+        "call_wall_premium_proxy": chain["call_wall_premium_proxy"],
         "pe_oi_change": chain["pe_oi_change"], "ce_oi_change": chain["ce_oi_change"],
         "entry_trigger": rnd(entry), "stop_loss": rnd(sl),
         "target_1": rnd(t1), "target_2": rnd(t2),
