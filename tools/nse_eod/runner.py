@@ -124,7 +124,13 @@ def track_prior(prior, current_date, cash):
             sig = previous["signal"]
             symbol, direction = sig["symbol"], sig["direction"]
             sl, entry, t1, t2 = [float(sig[k]) for k in ("stop_loss","entry_trigger","target_1","target_2")]
-            if (current_date-last).days > 8: continue
+            delta_days = (current_date-last).days
+            if delta_days > 8 or delta_days < 0: continue
+            if delta_days == 0:
+                # Repeated EOD scheduled checks must not reinterpret today's
+                # entry and stop as a prior-session paper position.
+                kept.append(previous)
+                continue
             row = cash.get(symbol)
             if not row:
                 kept.append(previous)
@@ -247,8 +253,9 @@ def main():
                            "stock_futures_symbols":nf})
             result["status"]="VERIFIED EOD RESEARCH"
             current = [{"asof_date":market_date.isoformat(),"signal":pick} for pick in picks]
+            deduped = {item["signal"]["signal_id"]: item for item in (keep + current)}
             state_path.write_text(json.dumps({"last_date":market_date.isoformat(),
-                                              "active":(keep+current)[-25:]},indent=2),encoding="utf-8")
+                                              "active":list(deduped.values())[-25:]},indent=2),encoding="utf-8")
     except (Unavailable, ValueError, OSError) as exc:
         result["errors"].append(str(exc)[:900])
     OUTPUT.joinpath("report.json").write_text(json.dumps(result,indent=2),encoding="utf-8")
