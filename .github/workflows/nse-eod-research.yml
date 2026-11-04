@@ -1,10 +1,10 @@
 name: FnO Tattva NSE EOD OI research
 on:
   push:
-    branches: [main]
+    branches: [main, nse-eod-expert-opportunities]
     paths:
       - 'tools/nse_eod/**'
-      - 'tests/test_nse_eod_research.py'
+      - 'tests/test_nse_eod_*.py'
       - '.github/workflows/nse-eod-research.yml'
   workflow_dispatch:
     inputs:
@@ -30,7 +30,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Validate analysis engine offline
-        run: python -m unittest discover -s tests -p 'test_nse_eod_research.py' -v
+        run: python -m unittest discover -s tests -p 'test_nse_eod_*.py' -v
       - name: Restore prior research watch state
         uses: actions/cache/restore@v4
         with:
@@ -46,6 +46,8 @@ jobs:
           set -euo pipefail
           if [[ -n "$MANUAL_DATE" ]]; then
             python tools/nse_eod/runner.py --asof "$MANUAL_DATE"
+          elif [[ "${{ github.ref_name }}" == "nse-eod-expert-opportunities" && "${{ github.event_name }}" == "push" ]]; then
+            python tools/nse_eod/runner.py --asof 2026-11-03
           else
             python tools/nse_eod/runner.py
           fi
