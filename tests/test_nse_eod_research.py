@@ -94,6 +94,8 @@ class EODRulesTests(unittest.TestCase):
         chain={"near_put_wall":95,"near_call_wall":120,"max_pain":106,
                "previous_max_pain":105, "previous_pcr":1.1,
                "previous_put_wall":94,"previous_call_wall":120,"put_wall_shift":1,"call_wall_shift":0,
+               "put_wall_premium_proxy":{"label":"MIXED","oi_change":0,"premium_pct":None},
+               "call_wall_premium_proxy":{"label":"MIXED","oi_change":0,"premium_pct":None},
                "pcr":1.2,
                "pe_oi_change":3000,"ce_oi_change":-1000,
                "put_wall":95,"call_wall":120}
