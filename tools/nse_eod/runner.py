@@ -204,7 +204,6 @@ def main():
     print(f"RESULT status={result['status']} market_date={result['market_date']} candidates={len(result['candidates'])} errors={len(result['errors'])}")
     print(f"COVERAGE={result.get('coverage',{})}")
     print(f"FUTURES_REGIMES={result.get('futures_regimes',{})}")
-    for c in result["candidates"]: print("CANDIDATE",c["symbol"],c["direction"],c["entry_trigger"],c["stop_loss"],c["target_1"],c["score"])
     if result["errors"]: print("NOTES:", " | ".join(result["errors"][:2]))
     return 0
 
