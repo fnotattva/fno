@@ -1,5 +1,5 @@
 import csv,io,urllib.request,zipfile,collections
-url='https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_20261103_F_0000.csv.zip'
+url='https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_20261103_F_0000.csv.zip'
 req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0','Referer':'https://www.nseindia.com/'})
 with urllib.request.urlopen(req,timeout=25) as x: blob=x.read()
 with zipfile.ZipFile(io.BytesIO(blob)) as z:
