@@ -135,6 +135,11 @@ def render(data):
         lines += ["**Data notes:** " + " | ".join(data["errors"][:4]), ""]
     if data["status"] != "VERIFIED EOD RESEARCH":
         lines += ["**NO NEW VERIFIED EOD PICKS.** Do not use stale or incomplete data as today's trade signal.", ""]
+    if data["status"] == "VERIFIED EOD RESEARCH" and not data.get("candidates"):
+        lines += ["**NO TRADE:** Full NSE EOD data validated, but no setup passed the confluence and risk filters.", ""]
+        for ob in data.get("other_observations", [])[:3]:
+            lines.append(f"- {ob['symbol']} ({ob['regime']}): futures OI {ob['futures_oi_change_pct']:+.2f}% — watch only, risk or trend filters not met.")
+        lines.append("")
     for n, c in enumerate(data.get("candidates", []), 1):
         lines += [f"## {n}. {c['symbol']} — {c['direction']} WATCH ({c['score']}/100 evidence score)",
                   f"- Futures {c['futures_expiry']}: {c['regime']}; settlement ₹{c['futures_settlement']:.2f} ({c['futures_change_pct']:+.2f}%), OI {c['futures_oi']:,.0f} ({c['futures_oi_change_pct']:+.2f}%; change {c['futures_oi_change']:+,.0f}).",
