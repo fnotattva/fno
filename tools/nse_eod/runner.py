@@ -91,7 +91,7 @@ def build_market_summary(asof, fo, cm, hist):
     # Separate qualitative-pattern discovery, not a softened A-tier score.
     # Draw from the whole verified NSE F&O universe, even when an options
     # chain is incomplete, but retain minimal data/liquidity guardrails.
-    primary_symbols = {item["symbol"] for item in picks[:3]}
+    primary_symbols = {item["symbol"] for item in picks}
     alternatives = []
     for symbol, contracts in futures.items():
         if symbol in primary_symbols or symbol not in stocks:
