@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date
 from math import isfinite
+from technicals import compute_technicals, technical_confirmation
 
 def num(v, default=0.0):
     try:
@@ -135,27 +136,8 @@ def ema(values, length):
     return val
 
 def tech_metrics(rows):
-    """rows: valid chronological CM OHLCV, including most recent date."""
-    if len(rows) < 22: return None
-    closes = [num(r.get("ClsPric")) for r in rows]
-    highs = [num(r.get("HghPric")) for r in rows]
-    lows = [num(r.get("LwPric")) for r in rows]
-    volumes = [num(r.get("TtlTradgVol")) for r in rows]
-    if min(closes) <= 0 or min(highs) <= 0 or min(lows) <= 0:
-        return None
-    true_ranges = [max(highs[i] - lows[i], abs(highs[i] - closes[i-1]),
-                       abs(lows[i] - closes[i-1])) for i in range(1, len(rows))]
-    atr14 = sum(true_ranges[-14:]) / 14
-    vol20 = sum(volumes[-21:-1]) / 20
-    return {
-        "close": closes[-1], "high": highs[-1], "low": lows[-1],
-        "open": num(rows[-1].get("OpnPric")), "ema20": ema(closes, 20),
-        "ema50": ema(closes, 50), "atr14": atr14,
-        "rvol20": volumes[-1] / vol20 if vol20 > 0 else 0,
-        "prev5_high": max(highs[-6:-1]), "prev5_low": min(lows[-6:-1]),
-        "prev20_high": max(highs[-21:-1]), "prev20_low": min(lows[-21:-1]),
-        "cash_volume": volumes[-1], "sessions": len(rows),
-    }
+    """Cash EOD 20/50 averages, RSI, MACD, crosses and 60-session Fibonacci."""
+    return compute_technicals(rows)
 
 def research_candidate(symbol, future, chain, tech, asof):
     """Price levels use NSE cash-stock reference (not executable futures fills)."""
@@ -169,7 +151,9 @@ def research_candidate(symbol, future, chain, tech, asof):
         return None
     fpct, opct = pct(f_close, f_prior), pct(oi, oi_previous)
     regime = classify_futures(fpct, opct)
-    if regime == "NEUTRAL": return None
+    # A short-covering rally or long unwind is a WATCH condition, not fresh momentum.
+    if regime not in ("LONG BUILDUP", "SHORT BUILDUP"): return None
+    if abs(fpct) < 0.5 or abs(opct) < 2.0: return None
     direction = "LONG" if regime in ("LONG BUILDUP", "SHORT COVERING") else "SHORT"
     side = 1 if direction == "LONG" else -1
     price, atr = tech["close"], tech["atr14"]
@@ -178,7 +162,8 @@ def research_candidate(symbol, future, chain, tech, asof):
         return None  # wrong underlying or inconsistent settlement snapshot
     if direction == "LONG" and (price <= tech["ema20"] or price < tech["prev5_high"] * 0.995): return None
     if direction == "SHORT" and (price >= tech["ema20"] or price > tech["prev5_low"] * 1.005): return None
-    if tech["rvol20"] < 0.75: return None
+    technical = technical_confirmation(tech, direction)
+    if not technical["approved"]: return None
     trigger_buffer = max(0.07 * atr, price * 0.0004)
     if direction == "LONG":
         entry = tech["high"] + trigger_buffer
@@ -205,29 +190,36 @@ def research_candidate(symbol, future, chain, tech, asof):
         wall = chain["near_put_wall"]
         if wall is not None and t1 < wall < entry: return None
 
-    futures_score = 26 if regime in ("LONG BUILDUP", "SHORT BUILDUP") else 8
-    futures_score += 8 if abs(opct) >= 5 else 5 if abs(opct) >= 2 else 2
-    futures_score += 6 if abs(fpct) >= 1 else 4 if abs(fpct) >= 0.5 else 1
-    futures_score = min(futures_score, 40)
+    # Independent evidence groups: futures max40; options max35; technicals max25.
+    futures_score = min(40, 26 + (8 if abs(opct)>=5 else 5) +
+                        (6 if abs(fpct)>=1 else 4))
     options_score = 0
-    supportive = chain["near_put_wall"] if direction == "LONG" else chain["near_call_wall"]
-    if supportive and abs(price-supportive)/price <= 0.10: options_score += 10
-    opposing = chain["near_call_wall"] if direction == "LONG" else chain["near_put_wall"]
-    options_score += 9 if opposing is not None else 3
-    if direction == "LONG":
-        if chain["pe_oi_change"] > chain["ce_oi_change"]: options_score += 7
-        if 0.75 <= chain["pcr"] <= 1.9: options_score += 5
-        if chain["max_pain"] >= price: options_score += 4
-    else:
-        if chain["ce_oi_change"] > chain["pe_oi_change"]: options_score += 7
-        if 0.3 <= chain["pcr"] <= 1.25: options_score += 5
-        if chain["max_pain"] <= price: options_score += 4
-    options_score = min(options_score, 35)
-    technical_score = 7 + 8  # EMA20 trend + prior-five-day extreme proximity
-    if tech["rvol20"] >= 1.25: technical_score += 6
-    if side * (price - tech["open"]) > 0: technical_score += 4
+    put_wall = chain["near_put_wall"]
+    call_wall = chain["near_call_wall"]
+    supportive = put_wall if direction == "LONG" else call_wall
+    if supportive and ((0 <= price-supportive <= price*0.075) if side>0
+                       else (0 <= supportive-price <= price*0.075)):
+        options_score += 8
+    # Opposing OI wall must not intervene before T1 (already checked).
+    options_score += 7
+    delta_relative = (chain["pe_oi_change"]-chain["ce_oi_change"]) * side
+    if delta_relative>0: options_score += 8
+    previous_pcr = chain.get("previous_pcr")
+    if previous_pcr is not None and side*(chain["pcr"]-previous_pcr)>0:
+        options_score += 4
+    elif (0.75<=chain["pcr"]<=1.8 if side>0 else 0.3<=chain["pcr"]<=1.15):
+        options_score += 2
+    wall_shift = chain.get("put_wall_shift" if side>0 else "call_wall_shift")
+    if wall_shift is not None and side*wall_shift>0: options_score += 3
+    proxy = chain["put_wall_premium_proxy" if side>0 else "call_wall_premium_proxy"]
+    if proxy.get("label")=="WRITING-LIKE": options_score += 4
+    if side*(chain["max_pain"]-price)>0: options_score += 1
+    options_score = min(35,options_score)
+    technical_score = technical["score"]
     score = futures_score + options_score + technical_score
-    if score < 63: return None
+    # Explicit high-confluence gates, never a daily quota.
+    if (futures_score<35 or options_score<23 or technical_score<23 or score<85):
+        return None
     def rnd(x): return round(x, 2)
     return {
         "signal_id": f"{asof:%Y%m%d}-{symbol}-{direction}",
@@ -237,6 +229,20 @@ def research_candidate(symbol, future, chain, tech, asof):
         "futures_oi_change": round(oi_delta), "futures_oi_change_pct": round(opct, 2),
         "futures_volume": round(f_volume), "cash_close": rnd(price),
         "cash_rvol20": round(tech["rvol20"], 2), "ema20": rnd(tech["ema20"]),
+        "ema50":rnd(tech["ema50"]), "sma20":rnd(tech["sma20"]), "sma50":rnd(tech["sma50"]),
+        "rsi14":round(tech["rsi14"],2), "macd":round(tech["macd"],4),
+        "macd_signal":round(tech["macd_signal"],4),
+        "macd_hist":round(tech["macd_hist"],4),
+        "ema_crossover":tech["ema_crossover"],
+        "sma_crossover":tech["sma_crossover"],
+        "fib_swing_high60":rnd(tech["fib_swing_high60"]),
+        "fib_swing_low60":rnd(tech["fib_swing_low60"]),
+        "fib_support":rnd(tech["fib_support"]) if tech["fib_support"] is not None else None,
+        "fib_resistance":rnd(tech["fib_resistance"]) if tech["fib_resistance"] is not None else None,
+        "fib_levels60":{k:rnd(v) for k,v in tech["fib_levels60"].items()},
+        "technical_reasons":technical["reasons"],
+        "futures_score":futures_score, "options_score":options_score,
+        "technical_score":technical_score,
         "atr14": rnd(atr), "put_wall": chain["put_wall"], "call_wall": chain["call_wall"],
         "near_put_wall": chain["near_put_wall"], "near_call_wall": chain["near_call_wall"],
         "max_pain": chain["max_pain"], "previous_max_pain": chain["previous_max_pain"],
