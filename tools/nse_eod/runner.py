@@ -136,14 +136,15 @@ def render(data):
     if data["status"] != "VERIFIED EOD RESEARCH":
         lines += ["**NO NEW VERIFIED EOD PICKS.** Do not use stale or incomplete data as today's trade signal.", ""]
     if data["status"] == "VERIFIED EOD RESEARCH" and not data.get("candidates"):
-        lines += ["**NO TRADE:** Full NSE EOD data validated, but no setup passed the confluence and risk filters.", ""]
-        for ob in data.get("other_observations", [])[:3]:
-            lines.append(f"- {ob['symbol']} ({ob['regime']}): futures OI {ob['futures_oi_change_pct']:+.2f}% — watch only, risk or trend filters not met.")
-        lines.append("")
+        lines += ["**NO TRADE.** No stock passed the full futures OI, options-chain, technical-momentum and 2R risk gates. No candidate is being recommended.", ""]
     for n, c in enumerate(data.get("candidates", []), 1):
         lines += [f"## {n}. {c['symbol']} — {c['direction']} WATCH ({c['score']}/100 evidence score)",
                   f"- Futures {c['futures_expiry']}: {c['regime']}; settlement ₹{c['futures_settlement']:.2f} ({c['futures_change_pct']:+.2f}%), OI {c['futures_oi']:,.0f} ({c['futures_oi_change_pct']:+.2f}%; change {c['futures_oi_change']:+,.0f}).",
-                  f"- Spot close ₹{c['cash_close']:.2f}; relative volume {c['cash_rvol20']:.2f}x, EMA20 ₹{c['ema20']:.2f}, ATR14 ₹{c['atr14']:.2f}.",
+                  f"- Cash close ₹{c['cash_close']:.2f}, RVOL20 {c['cash_rvol20']:.2f}x, ATR14 ₹{c['atr14']:.2f}.",
+                  f"- **Trend:** EMA20 ₹{c['ema20']:.2f}, EMA50 ₹{c['ema50']:.2f}; SMA20 ₹{c['sma20']:.2f}, SMA50 ₹{c['sma50']:.2f}. EMA cross: {c['ema_crossover'] or 'none recent'}; SMA cross: {c['sma_crossover'] or 'none recent'}.",
+                  f"- **Momentum:** RSI14 {c['rsi14']:.1f}; MACD {c['macd']:+.3f}, signal {c['macd_signal']:+.3f}, histogram {c['macd_hist']:+.3f}.",
+                  f"- **Fibonacci 60-session historical swing:** ₹{c['fib_swing_low60']:.2f}–₹{c['fib_swing_high60']:.2f}; nearby fib support ₹{c['fib_support'] if c['fib_support'] is not None else 'N/A'} / resistance ₹{c['fib_resistance'] if c['fib_resistance'] is not None else 'N/A'}. These are contextual levels, not assured reversal points.",
+                  f"- **Evidence:** Futures {c['futures_score']}/40 + Options {c['options_score']}/35 + Technical {c['technical_score']}/25; confirmations: {', '.join(c['technical_reasons'])}.",
                   f"- Options expiry {c['options_expiry']}: max PE OI wall ₹{c['put_wall']:g} (previous ₹{c['previous_put_wall'] or 0:g}), max CE OI wall ₹{c['call_wall']:g} (previous ₹{c['previous_call_wall'] or 0:g}); nearest relevant walls PE ₹{c['near_put_wall'] or 0:g} / CE ₹{c['near_call_wall'] or 0:g}.",
                   f"- Full-chain max pain ₹{c['max_pain']:g} (previous ₹{c['previous_max_pain'] or 0:g}), PCR {c['pcr']:.3f} (previous {c['previous_pcr'] or 0:.3f}); PE/CE OI change {c['pe_oi_change']:+,}/{c['ce_oi_change']:+,}.",
                   f"- Option premium/OI proxies at highest walls: PE {c['put_wall_premium_proxy']['label']} (OI Δ {c['put_wall_premium_proxy']['oi_change']:+,}); CE {c['call_wall_premium_proxy']['label']} (OI Δ {c['call_wall_premium_proxy']['oi_change']:+,}). These do not establish actual writing or covering.",
@@ -158,7 +159,7 @@ def render(data):
     lines += ["## Limitations",
               "- These are conditional research WATCH levels, **not executed orders**. Cash-equity levels are not futures execution prices.",
               "- OI buildup/covering is inferred from price and net OI, not direct identification of buyers/writers.",
-              "- Put/call walls and max pain are not guaranteed barriers or targets. Closing prices may change after exchange corrections.",
+              "- Put/call walls, Fibonacci levels, EMA/SMA, RSI and MACD are related proxies, not independent guarantees or targets; test historical performance before relying on any combination. Exchange prices may be corrected.",
               "- Positions are **not monitored intraday**. Daily OHLC does not establish order/stop sequence or a five-minute breakout close. For any actual trade, arrange broker-side stop protection; overnight gaps may exceed SL.",
               "- The 0.15% round-trip impact assumption is illustrative, not account-specific brokerage/taxes. Evidence scores are heuristics, not success probabilities.",
               "- Futures and options prices include expiry/basis risks; evaluate appropriate instrument separately before execution.",
@@ -168,7 +169,7 @@ def render(data):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--asof", default=None, help="Override IST market date YYYY-MM-DD for offline/backfill tests")
-    parser.add_argument("--history-days",type=int,default=47)
+    parser.add_argument("--history-days",type=int,default=115)
     parser.add_argument("--state",default="nse_eod_state.json")
     args = parser.parse_args()
     today = date.fromisoformat(args.asof) if args.asof else datetime.now(IST).date()
