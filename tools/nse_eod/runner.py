@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from data import Unavailable, cash_history, most_recent, url_for
 from logic import chain_metrics, expiry, num, research_candidate, tech_metrics, classify_futures, pct
+from expert import expert_watch_candidate
 
 IST = ZoneInfo("Asia/Kolkata")
 OUTPUT = Path("out")
@@ -87,7 +88,33 @@ def build_market_summary(asof, fo, cm, hist):
     picks.sort(key=lambda c: (c["score"], abs(c["futures_oi_change_pct"]),
                               c["cash_rvol20"]), reverse=True)
     regime_observations.sort(key=lambda c: abs(c["futures_oi_change_pct"]), reverse=True)
-    return picks[:3], regime_observations[:5], dict(covered), dict(regimes), len(futures)
+    # Separate qualitative-pattern discovery, not a softened A-tier score.
+    # Draw from the whole verified NSE F&O universe, even when an options
+    # chain is incomplete, but retain minimal data/liquidity guardrails.
+    primary_symbols = {item["symbol"] for item in picks[:3]}
+    alternatives = []
+    for symbol, contracts in futures.items():
+        if symbol in primary_symbols or symbol not in stocks:
+            continue
+        front = min(contracts, key=expiry)
+        if expiry(front) <= asof + timedelta(days=3):
+            continue
+        history = sorted(history_by_symbol.get(symbol, []), key=lambda t:t[0])
+        history.append((asof, stocks[symbol]))
+        technical = tech_metrics([bar for _, bar in history])
+        if technical is None:
+            continue
+        options = option_chains.get((symbol, expiry(front))) or []
+        options_context = chain_metrics(options, technical["close"]) if options else None
+        idea = expert_watch_candidate(symbol, front, options_context, technical, asof)
+        if idea is not None:
+            alternatives.append(idea)
+    alternatives.sort(key=lambda item: (
+        item["pattern_priority"], item["relative_volume"],
+        abs(item["futures_oi_change_pct"]), item["cash_turnover_inr"]
+    ), reverse=True)
+    covered["expert_watch_candidates"] = len(alternatives)
+    return picks[:3], alternatives[:3], regime_observations[:5], dict(covered), dict(regimes), len(futures)
 
 def track_prior(prior, current_date, cash):
     updates, kept = [], []
@@ -151,6 +178,24 @@ def render(data):
                   f"- **Next-session CASH reference trigger:** ₹{c['entry_trigger']:.2f}; hard SL ₹{c['stop_loss']:.2f}; T1 ₹{c['target_1']:.2f}; T2 ₹{c['target_2']:.2f}; modelled net T1 R:R {c['modelled_net_rr_t1']:.2f}:1 (assumed 0.15% round-trip costs).",
                   f"- Wait for confirmed 5-minute breakout/breakdown next session; do not chase an opening gap beyond ₹{c['gap_skip_level']:.2f}. Hold at most 1–5 sessions; recheck EOD OI and close. No trades are executed.",
                   ""]
+    # These are NOT trade recommendations, and never silently replace NO TRADE.
+    # They expose explicitly reasoned exceptions outside strict indicator gates.
+    if data["status"] == "VERIFIED EOD RESEARCH":
+        ideas=data.get("expert_opportunities",[])
+        lines += ["## B. Expert Opportunities — discretionary-style research watchlist (NOT trade calls)", ""]
+        if not ideas:
+            lines += ["**No additional credible ideas today.** Nothing else met the minimum independent pattern and liquidity checks.", ""]
+        for number, idea in enumerate(ideas,1):
+            lines += [
+                f"### {number}. {idea['symbol']} — {idea['directional_bias']} BIAS / WATCH ONLY",
+                f"- **Why worth observing:** {idea['pattern']}. NSE cash close ₹{idea['cash_close']:.2f}, relative volume {idea['relative_volume']:.2f}×; futures {idea['futures_regime']} (price {idea['futures_change_pct']:+.2f}%, OI {idea['futures_oi_change_pct']:+.2f}%).",
+                f"- **Technical context:** EMA20 ₹{idea['ema20']:.2f}, EMA50 ₹{idea['ema50']:.2f}, RSI14 {idea['rsi14']:.1f}, MACD histogram {idea['macd_hist']:+.3f}; put/call walls {idea['put_wall'] if idea['put_wall'] else 'unavailable'} / {idea['call_wall'] if idea['call_wall'] else 'unavailable'}.",
+                f"- **What would confirm interest:** A next-session price/volume decision around cash ₹{idea['price_decision_level']:.2f}; this level is NOT an instruction to buy or sell.",
+                f"- **What would invalidate it:** {'Cash reference ₹%.2f' % idea['indicative_invalidation'] if idea['indicative_invalidation'] is not None else 'No acceptable stop distance yet; do not construct a trade plan.'}",
+                f"- **Why it did not become an A-tier pick / unresolved evidence:** {'; '.join(idea['caveats'])}.",
+                "- **Status: WATCH ONLY, not a recommendation.** Confirm with next-session price action, options positioning and execution costs before any separate trade plan.",
+                ""
+            ]
     if data.get("prior_updates"):
         lines += ["## Previous research watch updates"]
         for u in data["prior_updates"]:
@@ -177,7 +222,7 @@ def main():
     result = {"generated_ist":datetime.now(IST).isoformat(timespec="seconds"),
               "requested_date":today.isoformat(),"market_date":None,
               "status":"NO VERIFIED TRADE", "data_source":EOD_SOURCE,
-              "candidates":[],"prior_updates":[],"errors":[]}
+              "candidates":[],"expert_opportunities":[],"prior_updates":[],"errors":[]}
     state_path = Path(args.state)
     previous = {}
     if state_path.exists():
@@ -196,8 +241,8 @@ def main():
             stocks=equity_rows(cm)
             prior,keep=track_prior(previous.get("active",[]),market_date,stocks)
             result["prior_updates"]=prior
-            picks,watch,coverage,regimes,nf=build_market_summary(market_date,fo,cm,hist)
-            result.update({"candidates":picks, "other_observations":watch,
+            picks,expert_ideas,watch,coverage,regimes,nf=build_market_summary(market_date,fo,cm,hist)
+            result.update({"candidates":picks, "expert_opportunities":expert_ideas, "other_observations":watch,
                            "coverage":coverage,"futures_regimes":regimes,
                            "stock_futures_symbols":nf})
             result["status"]="VERIFIED EOD RESEARCH"
@@ -208,7 +253,7 @@ def main():
         result["errors"].append(str(exc)[:900])
     OUTPUT.joinpath("report.json").write_text(json.dumps(result,indent=2),encoding="utf-8")
     OUTPUT.joinpath("report.md").write_text(render(result),encoding="utf-8")
-    print(f"RESULT status={result['status']} market_date={result['market_date']} candidates={len(result['candidates'])} errors={len(result['errors'])}")
+    print(f"RESULT status={result['status']} market_date={result['market_date']} strict_candidates={len(result['candidates'])} expert_watch={len(result['expert_opportunities'])} errors={len(result['errors'])}")
     print(f"COVERAGE={result.get('coverage',{})}")
     print(f"FUTURES_REGIMES={result.get('futures_regimes',{})}")
     if result["errors"]: print("NOTES:", " | ".join(result["errors"][:2]))
