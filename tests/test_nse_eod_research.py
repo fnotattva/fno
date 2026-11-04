@@ -3,7 +3,7 @@ import unittest
 from datetime import date
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "nse_eod"))
-from logic import max_pain, chain_metrics, classify_futures, tech_metrics, research_candidate
+from logic import max_pain, chain_metrics, classify_futures, tech_metrics, research_candidate, wall_premium_proxy
 
 class EODRulesTests(unittest.TestCase):
     def test_four_regimes(self):
@@ -64,6 +64,15 @@ class EODRulesTests(unittest.TestCase):
         self.assertEqual(m["strike_count"],25)
         self.assertEqual(m["near_put_wall"],97)
         self.assertEqual(m["near_call_wall"],101)
+
+    def test_writing_proxies_are_explicitly_inferred(self):
+        rows = [
+            {"StrkPric":"100","OptnTp":"CE","OpnIntrst":"500","ChngInOpnIntrst":"100",
+             "ClsPric":"2.0","PrvsClsgPric":"3.0","TtlTradgVol":"100"},
+            {"StrkPric":"90","OptnTp":"PE","OpnIntrst":"400","ChngInOpnIntrst":"-100",
+             "ClsPric":"4.0","PrvsClsgPric":"3.0","TtlTradgVol":"120"}]
+        self.assertEqual(wall_premium_proxy(rows, 100, "CE")["label"],"WRITING-LIKE")
+        self.assertEqual(wall_premium_proxy(rows, 90, "PE")["label"],"UNWINDING/COVERING-LIKE")
 
     def test_trend_and_atr(self):
         history=[]
