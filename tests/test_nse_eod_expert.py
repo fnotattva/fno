@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "nse_eod"))
 from expert import expert_watch_candidate
-from runner import render
+from runner import render, track_prior
 
 
 class ExpertOpportunityTests(unittest.TestCase):
@@ -66,6 +66,16 @@ class ExpertOpportunityTests(unittest.TestCase):
         self.assertIn("SAMPLE",report)
         self.assertIn("WATCH ONLY",report)
         self.assertIn("NOT trade calls",report)
+
+    def test_same_day_repeat_does_not_fabricate_fills_or_exits(self):
+        prior=[{"asof_date":"2026-11-04","signal":{
+            "signal_id":"20261104-SAMPLE-LONG","symbol":"SAMPLE",
+            "direction":"LONG","stop_loss":95,"entry_trigger":101,
+            "target_1":110,"target_2":120}}]
+        candle={"SAMPLE":{"HghPric":"125","LwPric":"90","ClsPric":"105"}}
+        updates,kept=track_prior(prior,date(2026,11,4),candle)
+        self.assertEqual(updates,[])
+        self.assertEqual(kept,prior)
 
     def test_no_extra_names_when_none_pass(self):
         report=render({"market_date":"2026-11-03","requested_date":"2026-11-03",
