@@ -1,7 +1,7 @@
 name: FnO Tattva NSE EOD OI research
 on:
   push:
-    branches: [main, nse-eod-download-probe]
+    branches: [main]
     paths:
       - 'tools/nse_eod/**'
       - 'tests/test_nse_eod_research.py'
@@ -46,8 +46,6 @@ jobs:
           set -euo pipefail
           if [[ -n "$MANUAL_DATE" ]]; then
             python tools/nse_eod/runner.py --asof "$MANUAL_DATE"
-          elif [[ "${{ github.ref_name }}" == "nse-eod-download-probe" && "${{ github.event_name }}" == "push" ]]; then
-            python tools/nse_eod/runner.py --asof 2026-11-03
           else
             python tools/nse_eod/runner.py
           fi
