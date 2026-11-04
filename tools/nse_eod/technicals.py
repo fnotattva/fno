@@ -108,6 +108,7 @@ def compute_technicals(rows):
     above=[v for v in fib.values() if v > closes[-1]]
     cross_ema=_recent_cross(e20,e50)
     cross_sma=_recent_cross(s20,s50)
+    cross_macd=_recent_cross(macd,signal)
     return {
         "sessions": len(rows), "open":opens[-1], "high":highs[-1], "low":lows[-1],
         "close":closes[-1], "cash_volume":volumes[-1],
@@ -117,7 +118,7 @@ def compute_technicals(rows):
         "rsi14":rsi[-1], "rsi14_prev":rsi[-2],
         "macd":macd[-1], "macd_signal":signal[-1],
         "macd_hist":hist[-1], "macd_hist_prev":hist[-2],
-        "ema_crossover":cross_ema, "sma_crossover":cross_sma,
+        "ema_crossover":cross_ema, "sma_crossover":cross_sma, "macd_crossover":cross_macd,
         "prev5_high":max(highs[-6:-1]), "prev5_low":min(lows[-6:-1]),
         "prev20_high":max(highs[-21:-1]), "prev20_low":min(lows[-21:-1]),
         "fib_swing_high60":previous_hi, "fib_swing_low60":previous_lo,
