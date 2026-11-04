@@ -16,6 +16,7 @@ on:
     # 19:15 Asia/Kolkata Mon-Fri (UTC does not observe daylight saving)
     - cron: '45 13 * * 1-5'  # 19:15 IST first EOD attempt
     - cron: '25 14 * * 1-5'  # 19:55 IST retry for late NSE publication
+    - cron: '25 15 * * 1-5'  # 20:55 IST third fallback, prior to 21:15 delivery
 permissions:
   contents: read
 concurrency:
