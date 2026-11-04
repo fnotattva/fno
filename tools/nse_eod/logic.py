@@ -150,7 +150,8 @@ def research_candidate(symbol, future, chain, tech, asof):
         sl = tech["high"] + 0.12 * atr
         gap_limit = entry - 0.5 * atr
     risk = abs(entry - sl)
-    if (not (0.55 * atr <= risk <= 3.0 * atr) or abs(entry - price) > 1.6 * atr\n            or sl <= 0 or risk / entry > 0.045):
+    if (not (0.55 * atr <= risk <= 3.0 * atr) or abs(entry - price) > 1.6 * atr
+            or sl <= 0 or risk / entry > 0.045):
         return None
     t1 = entry + side * 2.55 * risk
     t2 = entry + side * 3.55 * risk
