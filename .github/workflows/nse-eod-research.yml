@@ -4,7 +4,7 @@ on:
     branches: [main]
     paths:
       - 'tools/nse_eod/**'
-      - 'tests/test_nse_eod_research.py'
+      - 'tests/test_nse_eod_*.py'
       - '.github/workflows/nse-eod-research.yml'
   workflow_dispatch:
     inputs:
@@ -30,7 +30,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Validate analysis engine offline
-        run: python -m unittest discover -s tests -p 'test_nse_eod_research.py' -v
+        run: python -m unittest discover -s tests -p 'test_nse_eod_*.py' -v
       - name: Restore prior research watch state
         uses: actions/cache/restore@v4
         with:
