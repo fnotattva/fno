@@ -234,7 +234,7 @@ def research_candidate(symbol, future, chain, tech, asof):
         "macd_signal":round(tech["macd_signal"],4),
         "macd_hist":round(tech["macd_hist"],4),
         "ema_crossover":tech["ema_crossover"],
-        "sma_crossover":tech["sma_crossover"],
+        "sma_crossover":tech["sma_crossover"], "macd_crossover":tech.get("macd_crossover"),
         "fib_swing_high60":rnd(tech["fib_swing_high60"]),
         "fib_swing_low60":rnd(tech["fib_swing_low60"]),
         "fib_support":rnd(tech["fib_support"]) if tech["fib_support"] is not None else None,
