@@ -12,7 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate archive retrieval and ZIP/CSV extraction
-        run: python3 tools/nse_eod_probe.py
+        run: |
+          python3 tools/quick_oi_inspect.py
+          python3 tools/nse_eod_probe.py
       - name: Save test output
         if: always()
         uses: actions/upload-artifact@v4
