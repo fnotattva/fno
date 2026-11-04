@@ -1,7 +1,7 @@
 name: FnO Tattva NSE EOD OI research
 on:
   push:
-    branches: [nse-eod-download-probe]
+    branches: [main, nse-eod-download-probe]
     paths:
       - 'tools/nse_eod/**'
       - 'tests/test_nse_eod_research.py'
