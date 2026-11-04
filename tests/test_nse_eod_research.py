@@ -5,8 +5,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "nse_eod"))
 from logic import max_pain, chain_metrics, classify_futures, tech_metrics, research_candidate, wall_premium_proxy
 from technicals import ema_series, sma_series, wilder_rsi, macd_series, technical_confirmation
+from runner import render
 
 class EODRulesTests(unittest.TestCase):
+    def test_no_trade_report_does_not_recommend_stock(self):
+        report=render({"market_date":"2026-11-03","requested_date":"2026-11-03",
+                       "generated_ist":"2026-11-04T10:00:00+05:30",
+                       "status":"VERIFIED EOD RESEARCH","candidates":[],
+                       "other_observations":[{"symbol":"DEMO","regime":"LONG BUILDUP"}],
+                       "prior_updates":[]})
+        self.assertIn("NO TRADE",report)
+        self.assertNotIn("DEMO",report)
+
     def test_four_regimes(self):
         for p, oi, expected in [(1,2,"LONG BUILDUP"),(-1,2,"SHORT BUILDUP"),
                                 (1,-2,"SHORT COVERING"),(-1,-2,"LONG UNWINDING"),
@@ -162,6 +172,18 @@ class EODRulesTests(unittest.TestCase):
         self.assertGreater(c["target_1"],c["entry_trigger"])
         self.assertLess(c["stop_loss"],c["entry_trigger"])
         self.assertGreaterEqual(c["modelled_net_rr_t1"],2)
+        self.assertGreaterEqual(c["score"],85)
+        self.assertGreaterEqual(c["technical_score"],23)
+        c["options_expiry"]="2026-11-23"
+        report=render({"market_date":"2026-11-03","requested_date":"2026-11-03",
+                       "generated_ist":"2026-11-04T10:00:00+05:30",
+                       "status":"VERIFIED EOD RESEARCH",
+                       "candidates":[c],"prior_updates":[]})
+        self.assertIn("EMA20",report)
+        self.assertIn("RSI14",report)
+        self.assertIn("MACD",report)
+        self.assertIn("Fibonacci",report)
+        self.assertIn("T1",report)
         fut["OpnIntrst"]="0"
         self.assertIsNone(research_candidate("DEMO",fut,chain,tech,date(2026,11,3)))
 
