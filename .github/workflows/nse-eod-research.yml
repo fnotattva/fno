@@ -14,7 +14,8 @@ on:
         type: string
   schedule:
     # 19:15 Asia/Kolkata Mon-Fri (UTC does not observe daylight saving)
-    - cron: '45 13 * * 1-5'
+    - cron: '45 13 * * 1-5'  # 19:15 IST first EOD attempt
+    - cron: '25 14 * * 1-5'  # 19:55 IST retry for late NSE publication
 permissions:
   contents: read
 concurrency:
