@@ -1,8 +1,11 @@
 import json
 import sys
 import unittest
+from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "nse_eod"))
+from data import Unavailable, cash_history
 from runner import apply_coverage_status, render
 
 class CoverageDeliveryTests(unittest.TestCase):
@@ -30,5 +33,23 @@ class CoverageDeliveryTests(unittest.TestCase):
         self.assertEqual(data["status"], "INCOMPLETE EOD RESEARCH")
         self.assertEqual(data["candidates"], [{"symbol": "EXAMPLE"}])
 
+    def test_history_fetches_in_batches_until_minimum_is_met(self):
+        calls = []
+        def fake_load(segment, day):
+            calls.append(day)
+            if day == date(2026, 11, 4):
+                raise Unavailable("holiday")
+            return [{"TradDt": day.isoformat()}]
+        with patch("data.load", side_effect=fake_load):
+            history, errors = cash_history(
+                date(2026, 11, 6), days=20, workers=2,
+                minimum_sessions=4, batch_size=3,
+            )
+        self.assertGreaterEqual(len(history), 4)
+        self.assertIn("2026-11-04", errors)
+        self.assertLessEqual(len(calls), 6)
+
 if __name__ == "__main__":
     unittest.main()
+
+
