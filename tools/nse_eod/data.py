@@ -28,19 +28,36 @@ def url_for(segment: str, day: date) -> str:
     if tag not in ("FO", "CM"): raise ValueError("Bad segment")
     return f"{ROOT}/{tag.lower()}/BhavCopy_NSE_{tag}_0_0_0_{day:%Y%m%d}_F_0000.csv.zip"
 
-def _download(url: str, timeout: int = 16) -> bytes:
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
-    request = urllib.request.Request(url, headers=HEADERS)
-    try:
-        with opener.open(request, timeout=timeout) as response:
-            host = urllib.parse.urlsplit(response.geturl()).hostname or ""
-            if not (host == "nseindia.com" or host.endswith(".nseindia.com")):
-                raise Unavailable("Redirect outside NSE")
-            blob = response.read(MAX_BYTES + 1)
-            if len(blob) > MAX_BYTES: raise Unavailable("Archive exceeds size cap")
-            return blob
-    except (urllib.error.URLError, TimeoutError) as exc:
-        raise Unavailable(f"Download failed: {type(exc).__name__}: {str(exc)[:90]}") from exc
+def _download(url: str, timeout: int = 16, attempts: int = 3) -> bytes:
+    """Download once successfully, with bounded retries for transient NSE responses."""
+    last_error = None
+    attempts_used = 0
+    for attempt in range(attempts):
+        attempts_used = attempt + 1
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+        )
+        request = urllib.request.Request(url, headers=HEADERS)
+        try:
+            with opener.open(request, timeout=timeout) as response:
+                host = urllib.parse.urlsplit(response.geturl()).hostname or ""
+                if not (host == "nseindia.com" or host.endswith(".nseindia.com")):
+                    raise Unavailable("Redirect outside NSE")
+                blob = response.read(MAX_BYTES + 1)
+                if len(blob) > MAX_BYTES: raise Unavailable("Archive exceeds size cap")
+                return blob
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code not in (403, 408, 429, 500, 502, 503, 504):
+                break
+        except (urllib.error.URLError, TimeoutError) as exc:
+            last_error = exc
+        if attempt + 1 < attempts:
+            time.sleep(0.75 * (2 ** attempt))
+    raise Unavailable(
+        f"Download failed after {attempts_used} attempt(s): "
+        f"{type(last_error).__name__}: {str(last_error)[:90]}"
+    ) from last_error
 
 def load(segment: str, day: date) -> list[dict[str, str]]:
     blob = _download(url_for(segment, day))
@@ -80,20 +97,28 @@ def most_recent(asof: date, back_days: int = 8):
             errors.append(f"{day.isoformat()}: {str(exc)[:120]}")
     raise Unavailable("No jointly valid FO/CM archive in lookback: " + "; ".join(errors[:5]))
 
-def cash_history(latest: date, days: int = 47, workers: int = 8):
+def cash_history(latest: date, days: int = 47, workers: int = 3,
+                 minimum_sessions: int = 70, batch_size: int = 12):
+    """Fetch recent CM history in small batches until technical coverage is sufficient."""
     history = {}
     errors = {}
     targets = [latest - timedelta(days=d) for d in range(1, days + 1)]
     targets = [d for d in targets if d.weekday() < 5]
     def task(day):
         return day, load("CM", day)
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(task, d): d for d in targets}
-        for fut in as_completed(futures):
-            day = futures[fut]
-            try:
-                key, rows = fut.result()
-                history[key] = rows
-            except (Unavailable, ValueError, zipfile.BadZipFile) as exc:
-                errors[day.isoformat()] = str(exc)[:110]
+    for start in range(0, len(targets), batch_size):
+        batch = targets[start:start + batch_size]
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(task, d): d for d in batch}
+            for fut in as_completed(futures):
+                day = futures[fut]
+                try:
+                    key, rows = fut.result()
+                    history[key] = rows
+                except (Unavailable, ValueError, zipfile.BadZipFile) as exc:
+                    errors[day.isoformat()] = str(exc)[:220]
+        if len(history) >= minimum_sessions:
+            break
     return history, errors
+
+
