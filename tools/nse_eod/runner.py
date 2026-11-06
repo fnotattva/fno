@@ -157,6 +157,18 @@ def track_prior(prior, current_date, cash):
             continue
     return updates, kept
 
+def apply_coverage_status(result):
+    """Keep incomplete technical coverage distinct from a verified zero-pick day."""
+    coverage = result.get("coverage", {})
+    missing = coverage.get("insufficient_cash_history", 0)
+    if missing:
+        result["status"] = "INCOMPLETE EOD RESEARCH"
+        result["errors"].append(
+            f"Technical history insufficient for {missing} stocks; "
+            f"{coverage.get('valid_history_and_chain', 0)} stocks have valid history and chains. "
+            "Empty A/B lists do not establish a market-wide no-trade result."
+        )
+
 def render(data):
     lines = [f"# FnO Tattva — NSE EOD OI Research | {data['market_date'] or data['requested_date']}",
              "", f"**Status:** {data['status']}", f"**Generated:** {data['generated_ist']}",
@@ -244,6 +256,7 @@ def main():
             hist,missing=cash_history(market_date,days=args.history_days)
             result["history_sessions"]=len(hist)
             result["cash_history_missing_days"]=len(missing)
+            result["cash_history_errors"]=missing
             stocks=equity_rows(cm)
             prior,keep=track_prior(previous.get("active",[]),market_date,stocks)
             result["prior_updates"]=prior
@@ -252,6 +265,7 @@ def main():
                            "coverage":coverage,"futures_regimes":regimes,
                            "stock_futures_symbols":nf})
             result["status"]="VERIFIED EOD RESEARCH"
+            apply_coverage_status(result)
             current = [{"asof_date":market_date.isoformat(),"signal":pick} for pick in picks]
             deduped = {item["signal"]["signal_id"]: item for item in (keep + current)}
             state_path.write_text(json.dumps({"last_date":market_date.isoformat(),
