@@ -97,7 +97,7 @@ def most_recent(asof: date, back_days: int = 8):
             errors.append(f"{day.isoformat()}: {str(exc)[:120]}")
     raise Unavailable("No jointly valid FO/CM archive in lookback: " + "; ".join(errors[:5]))
 
-def cash_history(latest: date, days: int = 47, workers: int = 3,
+def cash_history(latest: date, days: int = 115, workers: int = 3,
                  minimum_sessions: int = 70, batch_size: int = 12):
     """Fetch recent CM history in small batches until technical coverage is sufficient."""
     history = {}
