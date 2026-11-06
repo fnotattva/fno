@@ -161,11 +161,13 @@ def apply_coverage_status(result):
     """Keep incomplete technical coverage distinct from a verified zero-pick day."""
     coverage = result.get("coverage", {})
     missing = coverage.get("insufficient_cash_history", 0)
+    valid = coverage.get("valid_history_and_chain", 0)
     if missing:
-        result["status"] = "INCOMPLETE EOD RESEARCH"
+        result["status"] = ("PARTIAL EOD RESEARCH" if valid
+                            else "INCOMPLETE EOD RESEARCH")
         result["errors"].append(
             f"Technical history insufficient for {missing} stocks; "
-            f"{coverage.get('valid_history_and_chain', 0)} stocks have valid history and chains. "
+            f"{valid} stocks have valid history and chains. "
             "Empty A/B lists do not establish a market-wide no-trade result."
         )
 
@@ -178,8 +180,10 @@ def render(data):
         lines += [f"- FO archive: {url_for('FO', day)}", f"- CM archive: {url_for('CM', day)}", ""]
     if data.get("errors"):
         lines += ["**Data notes:** " + " | ".join(data["errors"][:4]), ""]
-    if data["status"] != "VERIFIED EOD RESEARCH":
+    if data["status"] == "INCOMPLETE EOD RESEARCH":
         lines += ["**NO NEW VERIFIED EOD PICKS.** Do not use stale or incomplete data as today's trade signal.", ""]
+    if data["status"] == "PARTIAL EOD RESEARCH":
+        lines += ["**PARTIAL COVERAGE.** Listed ideas, if any, come only from stocks with complete validated inputs. An empty list is not a market-wide no-trade conclusion.", ""]
     if data["status"] == "VERIFIED EOD RESEARCH" and not data.get("candidates"):
         lines += ["**NO TRADE.** No stock passed the full futures OI, options-chain, technical-momentum and 2R risk gates. No candidate is being recommended.", ""]
     for n, c in enumerate(data.get("candidates", []), 1):
@@ -198,7 +202,7 @@ def render(data):
                   ""]
     # These are NOT trade recommendations, and never silently replace NO TRADE.
     # They expose explicitly reasoned exceptions outside strict indicator gates.
-    if data["status"] == "VERIFIED EOD RESEARCH":
+    if data["status"] in ("VERIFIED EOD RESEARCH", "PARTIAL EOD RESEARCH"):
         ideas=data.get("expert_opportunities",[])
         lines += ["## B. Expert Opportunities — discretionary-style research watchlist (NOT trade calls)", ""]
         if not ideas:
@@ -282,3 +286,5 @@ def main():
 
 if __name__=="__main__":
     raise SystemExit(main())
+
+
