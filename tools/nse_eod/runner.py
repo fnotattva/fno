@@ -157,6 +157,20 @@ def track_prior(prior, current_date, cash):
             continue
     return updates, kept
 
+def apply_coverage_status(result):
+    """Keep incomplete technical coverage distinct from a verified zero-pick day."""
+    coverage = result.get("coverage", {})
+    missing = coverage.get("insufficient_cash_history", 0)
+    valid = coverage.get("valid_history_and_chain", 0)
+    if missing:
+        result["status"] = ("PARTIAL EOD RESEARCH" if valid
+                            else "INCOMPLETE EOD RESEARCH")
+        result["errors"].append(
+            f"Technical history insufficient for {missing} stocks; "
+            f"{valid} stocks have valid history and chains. "
+            "Empty A/B lists do not establish a market-wide no-trade result."
+        )
+
 def render(data):
     lines = [f"# FnO Tattva — NSE EOD OI Research | {data['market_date'] or data['requested_date']}",
              "", f"**Status:** {data['status']}", f"**Generated:** {data['generated_ist']}",
@@ -166,8 +180,10 @@ def render(data):
         lines += [f"- FO archive: {url_for('FO', day)}", f"- CM archive: {url_for('CM', day)}", ""]
     if data.get("errors"):
         lines += ["**Data notes:** " + " | ".join(data["errors"][:4]), ""]
-    if data["status"] != "VERIFIED EOD RESEARCH":
+    if data["status"] == "INCOMPLETE EOD RESEARCH":
         lines += ["**NO NEW VERIFIED EOD PICKS.** Do not use stale or incomplete data as today's trade signal.", ""]
+    if data["status"] == "PARTIAL EOD RESEARCH":
+        lines += ["**PARTIAL COVERAGE.** Listed ideas, if any, come only from stocks with complete validated inputs. An empty list is not a market-wide no-trade conclusion.", ""]
     if data["status"] == "VERIFIED EOD RESEARCH" and not data.get("candidates"):
         lines += ["**NO TRADE.** No stock passed the full futures OI, options-chain, technical-momentum and 2R risk gates. No candidate is being recommended.", ""]
     for n, c in enumerate(data.get("candidates", []), 1):
@@ -186,7 +202,7 @@ def render(data):
                   ""]
     # These are NOT trade recommendations, and never silently replace NO TRADE.
     # They expose explicitly reasoned exceptions outside strict indicator gates.
-    if data["status"] == "VERIFIED EOD RESEARCH":
+    if data["status"] in ("VERIFIED EOD RESEARCH", "PARTIAL EOD RESEARCH"):
         ideas=data.get("expert_opportunities",[])
         lines += ["## B. Expert Opportunities — discretionary-style research watchlist (NOT trade calls)", ""]
         if not ideas:
@@ -244,6 +260,7 @@ def main():
             hist,missing=cash_history(market_date,days=args.history_days)
             result["history_sessions"]=len(hist)
             result["cash_history_missing_days"]=len(missing)
+            result["cash_history_errors"]=missing
             stocks=equity_rows(cm)
             prior,keep=track_prior(previous.get("active",[]),market_date,stocks)
             result["prior_updates"]=prior
@@ -252,6 +269,7 @@ def main():
                            "coverage":coverage,"futures_regimes":regimes,
                            "stock_futures_symbols":nf})
             result["status"]="VERIFIED EOD RESEARCH"
+            apply_coverage_status(result)
             current = [{"asof_date":market_date.isoformat(),"signal":pick} for pick in picks]
             deduped = {item["signal"]["signal_id"]: item for item in (keep + current)}
             state_path.write_text(json.dumps({"last_date":market_date.isoformat(),
@@ -268,3 +286,5 @@ def main():
 
 if __name__=="__main__":
     raise SystemExit(main())
+
+
