@@ -283,7 +283,7 @@ def render(data):
                 ""
             ]
         ideas=data.get("expert_opportunities",[])
-        lines += ["### Other C ideas — WATCH ONLY, no defensible trade plan yet", ""]
+        lines += ["### Other C ideas — WATCH ONLY (NOT trade calls), no defensible trade plan yet", ""]
         if not ideas:
             lines += ["**No additional credible ideas today.** Nothing else met the minimum independent pattern and liquidity checks.", ""]
         for number, idea in enumerate(ideas,1):
@@ -298,8 +298,8 @@ def render(data):
                 ""
             ]
     if data.get("active_plan_reviews"):
-        lines += ["## D. Daily B/C research lifecycle review — HOLD / TIGHTEN / EXIT", "",
-                  "**These are strictly IF-FILLED scenarios, not verified portfolio positions.** Price touches do not establish orders or intraday event sequencing. Revised stops are for NEXT session if adopted via broker; they were not active during the observed day.", ""]
+        lines += ["## D. Daily A/B/C research lifecycle review — HOLD / TIGHTEN / EXIT", "",
+                  "**These are strictly IF-FILLED scenarios, not verified portfolio positions.** Price touches do not establish orders or intraday event sequencing. Revised stops are for NEXT session if adopted via broker; they were not active during the observed day. Existing A-tier positions are reviewed on the same evidence-driven schedule.", ""]
         for u in data["active_plan_reviews"]:
             lines += [f"### {u['symbol']} — {u['id']}",
                       f"- **Observed status:** {u['status']}",
@@ -400,7 +400,8 @@ def main():
             current = [{"asof_date":market_date.isoformat(),"signal":pick} for pick in picks]
             deduped = {item["signal"]["signal_id"]: item for item in (keep + current)}
             new_expert = [{"asof_date":market_date.isoformat(), "last_checked":market_date.isoformat(),
-                           "observed_sessions":0, "signal":plan} for plan in (plans+c_plans)]
+                           "observed_sessions":0, "signal":plan} for plan in (picks+plans+c_plans)
+                           if plan["symbol"] not in active_symbols]
             expert_deduped = {item["signal"]["signal_id"]:item for item in (expert_keep+new_expert)}
             state_path.write_text(json.dumps({"last_date":market_date.isoformat(),
                                               "active":list(deduped.values())[-25:],
