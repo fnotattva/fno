@@ -19,11 +19,13 @@ def positive(value):
 
 
 def review_research_plans(prior, asof, cash, snapshots):
-    """Review B/C positions on each completed NSE session, at most five held sessions.
+    """Review A/B/C research plans on every available completed NSE session.
 
-    The pending trigger is valid for two sessions. A potential entry-level touch
-    is tracked for up to five EOD holding scenarios, but is NEVER treated as a
-    confirmed trade. Invalid or missing symbol-specific inputs block new advice.
+    Pending untouched entry proposals expire after two verified trading
+    sessions. Once a trigger price was potentially touched, keep revisiting
+    the IF-FILLED scenario until original/prior suggested stop touches, T3
+    touches, or price+OI+technical deterioration suggests exit. No arbitrary
+    five-session exit. Never treat EOD observations as actual broker trades.
     """
     updates, still_open = [], []
     for previous in prior or []:
@@ -91,7 +93,8 @@ def review_research_plans(prior, asof, cash, snapshots):
             adverse_cash = side*(close-ema) < 0
             adverse_macd = side*float(tech.get("macd_hist") or 0) < 0
             sign_close = side*(close-entry)
-            max_holding = int(sig.get("holding_max_sessions",5))
+            # An older plan may still carry holding_max_sessions=5 from the
+            # previous policy; it is now advisory history, not a time exit.
             # Suggested new stop applies from NEXT session; never retroactively
             # pretend a newly suggested stop was active during today's candle.
             previous_suggested = positive(previous.get("suggested_stop_if_filled")) or stop
@@ -122,13 +125,21 @@ def review_research_plans(prior, asof, cash, snapshots):
             status = "NOT TRIGGERED — VERIFY LIVE 5-MIN CONDITIONS"
             action = "WAIT FOR CONFIRMED ENTRY; NO POSITION ASSUMED"
             terminal = False
+            prior_model_stop_hit = (
+                low <= effective_old_stop if side > 0 else high >= effective_old_stop
+            )
             if stop_hit and entry_hit:
                 status = "ENTRY AND STOP LEVELS TOUCHED — INTRADAY ORDER UNKNOWN"
                 action = "NO AUTOMATIC HOLD; VERIFY BROKER FILLS AND STOP EXECUTION; IF STILL LONG/SHORT, REASSESS"
                 terminal = True
             elif stop_hit:
-                status = "STOP LEVEL TOUCHED — ENTRY / FILL UNCONFIRMED"
-                action = "CANCEL UNFILLED IDEA; IF FILLED, CHECK BROKER STOP AND EXIT STATE"
+                status = "ORIGINAL STOP LOSS LEVEL TOUCHED — ENTRY / FILL UNCONFIRMED"
+                action = "CLOSE RESEARCH PLAN; VERIFY BROKER STOP EXECUTION AND ACTUAL POSITION STATE"
+                terminal = True
+            elif first_touched and prior_model_stop_hit:
+                status = "PREVIOUSLY PROPOSED TRAILING-STOP LEVEL TOUCHED — UNVERIFIED EXECUTION"
+                action = ("EXIT IF FILLED / CLOSE RESEARCH PLAN; suggested prior stop "
+                          "may not have been placed; verify broker holdings and stop")
                 terminal = True
             elif not first_touched and pending_sessions >= int(sig.get("valid_for_next_sessions",2)):
                 status = "ENTRY WINDOW EXPIRED WITHOUT EOD PRICE TOUCH"
@@ -144,16 +155,14 @@ def review_research_plans(prior, asof, cash, snapshots):
                 elif side*(close-effective_old_stop) <= 0:
                     action = "EXIT OR REASSESS IF FILLED: PREVIOUS PROTECTIVE STOP IS BREACHED BY EOD CLOSE"
                     terminal = True
-                elif held_scenario >= max_holding:
-                    action = "TIME EXIT IF FILLED: FIVE-SESSION MAX HOLDING WINDOW REACHED"
-                    terminal = True
                 elif target_hit[2]:
-                    # An extension above T3 requires verified follow-through and
-                    # no nearby new contrary wall; otherwise prefer closing remainder.
-                    strong = side*(close-t3) > 0 and aligned_futures and positive(tech.get("rvol20") or 0) and float(tech.get("rvol20") or 0) >= 1.2
-                    near_wall = bool(opposing and side*(opposing-close)>0 and abs(opposing-close)<atr)
-                    action = ("HOLD ONLY A SMALL REMAINDER BEYOND T3 IF FILLED, WITH PROTECTIVE TRAIL; REASSESS NEXT EOD"
-                              if strong and not near_wall else "BOOK/EXIT REMAINDER AT T3 IF FILLED; DO NOT ASSUME FILL")
+                    # T3 is the normal end of this particular research plan.
+                    # Continuing beyond T3 must be a NEW, independently
+                    # reassessed follow-through plan, not an auto-extension.
+                    action = ("T3 PRICE LEVEL REACHED: RECOMMEND CLOSE/BOOK REMAINDER "
+                              "IF FILLED. VERIFY ACTUAL BROKER ORDERS; ONLY A NEW "
+                              "SEPARATE EOD TREND PLAN MAY JUSTIFY HOLDING BEYOND T3")
+                    terminal = True
                 elif target_hit[1]:
                     action = "CONSIDER BOOKING AT T2 AND TRAIL REMAINDER IF CONFIRMED FILLED"
                 elif target_hit[0]:
@@ -185,6 +194,8 @@ def review_research_plans(prior, asof, cash, snapshots):
                 "hypothetical_holding_sessions":held_scenario if first_touched else 0,
                 "entry_price_level_ever_touched":bool(first_touched),
                 "entry_confirmed":False,"fill_status":"UNKNOWN — no broker fills supplied",
+                "lifecycle_policy":"Continue reviewing every available EOD until exit recommendation, stop/previous trail touch, or T3 touch — no automatic five-session termination",
+                "closure_reason":action if terminal else None,
                 "actual_position_known":False,"terminal_for_scenario":terminal,
                 "data_quality":"Current-session NSE cash, futures, option chain and technicals",
                 "risk_note":"EOD data cannot establish intraday event sequence or a broker fill. Proposed changes start NEXT session only."
