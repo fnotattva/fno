@@ -179,6 +179,7 @@ def research_candidate(symbol, future, chain, tech, asof):
         return None
     t1 = entry + side * 2.55 * risk
     t2 = entry + side * 3.55 * risk
+    t3 = entry + side * 4.55 * risk  # extension projection, not independently validated
     if abs(t1 - entry) / entry > 0.11: return None  # 1-5 session horizon: avoid impractically distant targets
     cost = entry * 0.0015  # modelled round-trip impact, not exact client charges
     net_rr = (abs(t1-entry) - cost) / (risk + cost)
@@ -254,7 +255,7 @@ def research_candidate(symbol, future, chain, tech, asof):
         "call_wall_premium_proxy": chain["call_wall_premium_proxy"],
         "pe_oi_change": chain["pe_oi_change"], "ce_oi_change": chain["ce_oi_change"],
         "entry_trigger": rnd(entry), "stop_loss": rnd(sl),
-        "target_1": rnd(t1), "target_2": rnd(t2),
+        "target_1": rnd(t1), "target_2": rnd(t2), "target_3": rnd(t3),
         "modelled_net_rr_t1": round(net_rr, 2), "modelled_roundtrip_cost_pct": 0.15,
         "gap_skip_level": rnd(gap_limit), "holding_sessions": "1-5",
         "exit": "Price crosses hard stop; close beyond reversed daily structure or adverse futures OI regime at next EOD; time exit after five sessions.",
