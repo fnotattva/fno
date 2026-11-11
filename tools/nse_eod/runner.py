@@ -193,7 +193,7 @@ def apply_coverage_status(result):
         result["errors"].append(
             f"Technical history insufficient for {missing} stocks; "
             f"{valid} stocks have valid history and chains. "
-            "Empty A/B lists do not establish a market-wide no-trade result."
+            "Empty A/B/C lists do not establish a market-wide no-trade result."
         )
 
 def render(data):
@@ -216,7 +216,9 @@ def render(data):
     if data.get("errors"):
         lines += ["**Data notes:** " + " | ".join(data["errors"][:4]), ""]
     if data["status"] == "INCOMPLETE EOD RESEARCH":
-        lines += ["**NO NEW VERIFIED EOD PICKS.** Do not use stale or incomplete data as today's trade signal.", ""]
+        lines += ["**NO NEW VERIFIED EOD PICKS.** Do not use stale or incomplete data as today's trade signal or as updated stop advice.", ""]
+    if not data.get("tracking_state_restored", True) and data.get("market_date"):
+        lines += ["**TRACKING CAVEAT:** Prior GitHub Actions cache was not restored; older plans may not appear. Actual broker positions cannot be inferred.", ""]
     if data["status"] == "PARTIAL EOD RESEARCH":
         lines += ["**PARTIAL COVERAGE.** Listed ideas, if any, come only from stocks with complete validated inputs. An empty list is not a market-wide no-trade conclusion.", ""]
     if data["status"] == "PARTIAL EOD RESEARCH" and not data.get("candidates"):
@@ -264,8 +266,24 @@ def render(data):
     # These are NOT trade recommendations, and never silently replace NO TRADE.
     # They expose explicitly reasoned exceptions outside strict indicator gates.
     if data["status"] in ("VERIFIED EOD RESEARCH", "PARTIAL EOD RESEARCH"):
+        c_plans=data.get("expert_c_trade_plans",[])
+        lines += ["## C. Early-stage expert conditional plans + remaining watch-only ideas", "",
+                  "C-tier is lower-conviction than A/B. An early-stage plan is issued only with an independent technical invalidation and price-structure T1; 0.6R at T1 is a net minimum, NOT a fixed mandatory target. Do not force a plan from an untradable watch.", ""]
+        for n, p in enumerate(c_plans,1):
+            lines += [
+                f"### C{n}. {p['symbol']} — {p['direction']} CONDITIONAL CASH RESEARCH PLAN",
+                f"- **Setup:** {p['pattern']}; {p['entry_pattern']}; cash close ₹{p['cash_close']:.2f}, RVOL {p['cash_rvol20']:.2f}×; futures {p['futures_regime']} (price {p['futures_change_pct']:+.2f}% / OI {p['futures_oi_change_pct']:+.2f}%).",
+                f"- **Entry ₹{p['entry_trigger']:.2f} | SL ₹{p['stop_loss']:.2f} | risk {p['initial_risk_pct']:.2f}%**. A next-session 5-minute cash confirmation with volume is required and unverified; retest strategies require a real pullback. Never chase opening gaps.",
+                f"- **T1 ₹{p['target_1']:.2f} | net {p['modelled_net_rr_t1']:.2f}R** — {p['target_sources'][0]}.",
+                f"- **T2 ₹{p['target_2']:.2f} | net {p['modelled_net_rr_t2']:.2f}R** — {p['target_sources'][1]}.",
+                f"- **T3 ₹{p['target_3']:.2f} | net {p['modelled_net_rr_t3']:.2f}R** — {p['target_sources'][2]}.",
+                f"- **Illustrative R benchmarks, NOT imposed targets:** 0.6R ₹{p['rr_reference_points']['0.6R']:.2f}; 1.5R ₹{p['rr_reference_points']['1.5R']:.2f}; 3R ₹{p['rr_reference_points']['3.0R']:.2f}.",
+                f"- **Evidence and caveats:** EMA20 ₹{p['ema20']:.2f}, EMA50 ₹{p['ema50']:.2f}, RSI14 {p['rsi14']:.1f}, MACD histogram {p['macd_hist']:+.4f}; PE wall {p['put_wall'] or 'unavailable'} / CE wall {p['call_wall'] or 'unavailable'}, max pain {p['max_pain'] or 'unavailable'}. {'; '.join(p['unresolved_evidence'])}.",
+                f"- **Lifecycle:** Pending idea expires after {p['valid_for_next_sessions']} trading sessions; if separately confirmed filled, reassess daily for no more than {p['holding_max_sessions']} trading sessions. {p['exit_rule']}",
+                ""
+            ]
         ideas=data.get("expert_opportunities",[])
-        lines += ["## C. Expert Opportunities — discretionary-style WATCH ONLY (NOT trade calls)", ""]
+        lines += ["### Other C ideas — WATCH ONLY, no defensible trade plan yet", ""]
         if not ideas:
             lines += ["**No additional credible ideas today.** Nothing else met the minimum independent pattern and liquidity checks.", ""]
         for number, idea in enumerate(ideas,1):
@@ -279,8 +297,24 @@ def render(data):
                 "- **Status: WATCH ONLY, not a recommendation.** Confirm with next-session price action, options positioning and execution costs before any separate trade plan.",
                 ""
             ]
-    if data.get("expert_prior_updates"):
-        lines += ["## Prior B-tier conditional plan observations — NOT verified fills"]
+    if data.get("active_plan_reviews"):
+        lines += ["## D. Daily B/C research lifecycle review — HOLD / TIGHTEN / EXIT", "",
+                  "**These are strictly IF-FILLED scenarios, not verified portfolio positions.** Price touches do not establish orders or intraday event sequencing. Revised stops are for NEXT session if adopted via broker; they were not active during the observed day.", ""]
+        for u in data["active_plan_reviews"]:
+            lines += [f"### {u['symbol']} — {u['id']}",
+                      f"- **Observed status:** {u['status']}",
+                      f"- **Recommendation IF independently confirmed filled:** {u['action_if_filled']}"]
+            if "latest_cash_close" in u:
+                lines += [
+                    f"- **Current price:** close ₹{u['latest_cash_close']:.2f} (H ₹{u['cash_high']:.2f}, L ₹{u['cash_low']:.2f}); move vs cash entry {u['price_move_from_entry_pct']:+.2f}%, not actual P&L.",
+                    f"- **Risk/stop:** original ₹{u['original_stop']:.2f}; previous model stop ₹{u['prior_suggested_stop']:.2f}; proposed NEXT-session stop ₹{u['suggested_stop_next_session_if_filled']:.2f}. Never loosen if already protected tighter.",
+                    f"- **Targets:** original T1/T2/T3 ₹{' / ₹'.join(f'{t:.2f}' for t in u['original_targets'])}; new conditional T1 ₹{u['updated_t1_if_filled']:.2f}. {u['target_note']}.",
+                    f"- **Updated fundamentals of setup:** futures {u['futures_regime_today']} (price {u['futures_price_change_pct']:+.2f}% / OI {u['futures_oi_change_pct']:+.2f}%); EMA20 ₹{u['ema20']:.2f}, RSI14 {u['rsi14']:.1f}, MACD histogram {u['macd_hist']:+.4f}, opposing options wall {u['opposing_oi_wall'] or 'unavailable'}.",
+                    f"- **Elapsed sessions:** {u['observed_sessions_since_signal']} since issue; {u['hypothetical_holding_sessions']} hypothetical holding observations. Actual trade status: {u['fill_status']}.",
+                ]
+            lines.append("")
+    if data.get("expert_prior_updates") and not data.get("active_plan_reviews"):
+        lines += ["## Prior conditional plan observations — not verified fills"]
         for u in data["expert_prior_updates"]:
             lines.append(f"- {u['id']}: {u['status']}")
         lines.append("")
@@ -294,7 +328,7 @@ def render(data):
               "- OI buildup/covering is inferred from price and net OI, not direct identification of buyers/writers.",
               "- Put/call walls, Fibonacci levels, EMA/SMA, RSI and MACD are related proxies, not independent guarantees or targets; test historical performance before relying on any combination. Exchange prices may be corrected.",
               "- Positions are **not monitored intraday**. Daily OHLC does not establish order/stop sequence or a five-minute breakout close. For any actual trade, arrange broker-side stop protection; overnight gaps may exceed SL.",
-              "- B-tier target 1 is anchored to the closest previous price structure / opposing OI wall; projected T2/T3 extensions are explicitly labelled and may never be reached. A 0.75R T1 floor is NOT evidence of profitability or positive expectancy.",
+              "- B/C T1 is structure-based, not chosen solely to fit an R ratio. C's 0.6R minimum net T1 is NOT evidence of a profitable strategy; a single 0.6R full exit needs over 62.5% winners before costs.",
               "- The 0.15% round-trip impact assumption is illustrative, not account-specific brokerage/taxes. Evidence scores are heuristics, not success probabilities.",
               "- Futures and options prices include expiry/basis risks; evaluate appropriate instrument separately before execution.",
               ""]
