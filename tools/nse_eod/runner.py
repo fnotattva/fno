@@ -13,6 +13,8 @@ from logic import chain_metrics, expiry, num, research_candidate, tech_metrics, 
 from expert import expert_watch_candidate
 from trade_plans import expert_trade_plan, track_expert_plans
 from management import review_research_plans
+from evidence import (build_cash_paths, price_path_evidence, fetch_fo_evidence,
+                      derivatives_evidence)
 from shortlist import choose_daily_shortlist
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -308,6 +310,13 @@ def render(data):
                 "- **Status: WATCH ONLY, not a recommendation.** Confirm with next-session price action, options positioning and execution costs before any separate trade plan.",
                 ""
             ]
+    if data.get("historical_fo_coverage"):
+        foh=data["historical_fo_coverage"]
+        if foh.get("historical_fo_requested"):
+            lines += [
+                f"**Additional NSE F&O evidence retrieval:** attempted {foh['historical_fo_requested']} prior validated FO archive dates, retrieved {foh['historical_fo_downloaded']}; missing {len(foh.get('missing',{}))}. These FO series are SAME-CONTRACT and never silently joined across expiry rolls.",
+                ""
+            ]
     if data.get("active_plan_reviews"):
         lines += ["## D. Daily A/B/C research lifecycle review — HOLD / TIGHTEN / EXIT / TIME EXIT", "",
                   "**These are strictly IF-FILLED scenarios, not verified portfolio positions.** Price touches do not establish orders or intraday event sequencing. Revised stops are for NEXT session if adopted via broker; they were not active during the observed day. Older AND newly issued A/B/C proposals are reviewed every subsequent verified EOD until invalidation/stop/trail, evidence-driven exit, T3 touch, or the provisional maximum 10-trading-session holding scenario. Day 5 is a progress checkpoint, day 7 a stalled-momentum early-exit review. Legacy 5-session limits are superseded; no new-idea quota is imposed by old research reviews.", ""]
@@ -322,6 +331,19 @@ def render(data):
                     f"- **Targets:** original T1/T2/T3 ₹{' / ₹'.join(f'{t:.2f}' for t in u['original_targets'])}; new conditional T1 ₹{u['updated_t1_if_filled']:.2f}. {u['target_note']}.",
                     f"- **Updated fundamentals of setup:** futures {u['futures_regime_today']} (price {u['futures_price_change_pct']:+.2f}% / OI {u['futures_oi_change_pct']:+.2f}%); EMA20 ₹{u['ema20']:.2f}, RSI14 {u['rsi14']:.1f}, MACD histogram {u['macd_hist']:+.4f}, opposing options wall {u['opposing_oi_wall'] or 'unavailable'}.",
                     f"- **Elapsed sessions:** {u['observed_sessions_since_signal']} since issue; {u['hypothetical_holding_sessions']} hypothetical holding observations; provisional exit horizon {u.get('provisional_max_holding_sessions',10)} NSE sessions, remaining {u.get('hypothetical_sessions_remaining','unknown')}. Actual trade status: {u['fill_status']}.",
+                ]
+            cash_hist=u.get("dated_cash_evidence",{})
+            if cash_hist:
+                touched=cash_hist.get("level_first_touch_dates",{})
+                lines += [
+                    f"- **Dated NSE CM price evidence:** {cash_hist.get('observed_sessions',0)} observed post-signal sessions. First entry-level touch {cash_hist.get('first_observed_entry_touch') or 'NONE'}; first T1/T2/T3 touches {touched.get('T1') or 'none'} / {touched.get('T2') or 'none'} / {touched.get('T3') or 'none'}; first original stop {touched.get('stop') or 'none'}.",
+                    f"- **Observed CASH excursions (NOT realized returns):** best {cash_hist.get('max_favourable_excursion_R_observed')}R; worst {cash_hist.get('max_adverse_excursion_R_observed')}R from hypothetical trigger. Entry-and-stop/stop-and-target same-session ambiguity dates: {', '.join(cash_hist.get('entry_and_stop_same_day_ambiguity',[])) or 'none observed'}.",
+                ]
+            fo_hist=u.get("historical_fo_evidence",{})
+            if fo_hist:
+                lines += [
+                    f"- **Same-contract historical NSE FO evidence:** {fo_hist.get('days',0)} validated snapshots from {fo_hist.get('first_date','unavailable')} to {fo_hist.get('last_date','unavailable')}; settlement move {fo_hist.get('settlement_change_over_observed_pct')}%; OI change {fo_hist.get('oi_change_over_observed_pct')}%; regime mix {fo_hist.get('regimes',{})}.",
+                    f"- **OI trend check:** verified two consecutive opposite futures-buildup sessions: {u.get('two_verified_consecutive_adverse_futures_oi_days',False)}. Historical FO archive references: {', '.join(obs.get('fo_archive','') for obs in fo_hist.get('history',[])[-3:] if obs.get('fo_archive')) or 'none available'}.",
                 ]
             lines.append("")
     if data.get("expert_prior_updates") and not data.get("active_plan_reviews"):
@@ -392,8 +414,26 @@ def main():
             prior,keep=track_prior(previous.get("active",[]),market_date,stocks)
             result["prior_updates"]=prior
             picks,plans,c_plans,expert_ideas,watch,coverage,regimes,nf,snapshots=build_market_summary(market_date,fo,cm,hist)
+            prior_expert = previous.get("expert_active",[])
+            # Dated CM OHLC history has already been downloaded for technicals.
+            # Reuse it per prior signal, then fetch only five extra verified
+            # same-contract FO archives (bounded, 2 workers) for OI/PCR trends.
+            cash_paths = build_cash_paths(hist, market_date, cm, prior_expert)
+            fo_trails, fo_provenance = fetch_fo_evidence(
+                prior_expert, hist, market_date, fo, snapshots, cash_paths)
+            result["historical_fo_coverage"] = fo_provenance
             expert_prior, expert_keep = review_research_plans(
-                previous.get("expert_active",[]), market_date, stocks, snapshots)
+                prior_expert, market_date, stocks, snapshots,
+                derivatives_trails=fo_trails)
+            previous_by_id = {p.get("signal",{}).get("signal_id"):p.get("signal")
+                              for p in prior_expert}
+            for review in expert_prior:
+                signal = previous_by_id.get(review.get("id")) or {}
+                symbol = review.get("symbol")
+                review["dated_cash_evidence"] = price_path_evidence(
+                    signal, cash_paths.get(symbol, []))
+                review["historical_fo_evidence"] = derivatives_evidence(
+                    fo_trails.get(symbol, []))
             result["expert_prior_updates"] = expert_prior
             result["active_plan_reviews"] = expert_prior
             # Do not reissue a fresh idea for a name already under review.
