@@ -12,6 +12,7 @@ from data import Unavailable, cash_history, most_recent, url_for, market_closure
 from logic import chain_metrics, expiry, num, research_candidate, tech_metrics, classify_futures, pct
 from expert import expert_watch_candidate
 from trade_plans import expert_trade_plan, track_expert_plans
+from management import review_research_plans
 
 IST = ZoneInfo("Asia/Kolkata")
 OUTPUT = Path("out")
@@ -49,6 +50,7 @@ def build_market_summary(asof, fo, cm, hist):
         for sym, row in equity_rows(old_rows, set(futures)).items():
             history_by_symbol[sym].append((old_date, row))
     picks = []
+    snapshots = {}
     regimes = Counter()
     covered = Counter()
     regime_observations = []
@@ -70,6 +72,7 @@ def build_market_summary(asof, fo, cm, hist):
         tech = tech_metrics([entry for _, entry in series])
         if not tech: covered["insufficient_cash_history"] += 1; continue
         covered["valid_history_and_chain"] += 1
+        snapshots[sym]={"future":front,"chain":cm_chain,"tech":tech}
         if ex <= asof + timedelta(days=3):
             covered["near_expiry_excluded"] += 1; continue
         item = research_candidate(sym, front, cm_chain, tech, asof)
@@ -95,6 +98,7 @@ def build_market_summary(asof, fo, cm, hist):
     primary_symbols = {item["symbol"] for item in picks}
     alternatives = []
     plans = []
+    c_plans = []
     for symbol, contracts in futures.items():
         if symbol in primary_symbols or symbol not in stocks:
             continue
@@ -114,18 +118,28 @@ def build_market_summary(asof, fo, cm, hist):
             if proposed is not None:
                 plans.append(proposed)
             else:
-                alternatives.append(idea)
+                conditional_c = expert_trade_plan(idea, technical, options_context, front, tier="C")
+                if conditional_c is not None:
+                    c_plans.append(conditional_c)
+                else:
+                    alternatives.append(idea)
     plans.sort(key=lambda item: (
         item["pattern_priority"], item["modelled_net_rr_t1"],
         item["cash_rvol20"], abs(item["futures_oi_change_pct"])
+    ), reverse=True)
+    c_plans.sort(key=lambda item: (
+        item["pattern_priority"], item["modelled_net_rr_t1"],
+        item["cash_rvol20"],abs(item["futures_oi_change_pct"])
     ), reverse=True)
     alternatives.sort(key=lambda item: (
         item["pattern_priority"], item["relative_volume"],
         abs(item["futures_oi_change_pct"]), item["cash_turnover_inr"]
     ), reverse=True)
     covered["expert_trade_plan_candidates"] = len(plans)
+    covered["expert_c_trade_plan_candidates"] = len(c_plans)
     covered["expert_watch_candidates"] = len(alternatives)
-    return picks[:3], plans[:3], alternatives[:3], regime_observations[:5], dict(covered), dict(regimes), len(futures)
+    return (picks[:3], plans[:3], c_plans[:3], alternatives[:3],
+            regime_observations[:5], dict(covered), dict(regimes), len(futures),snapshots)
 
 def track_prior(prior, current_date, cash):
     updates, kept = [], []
@@ -297,7 +311,8 @@ def main():
     result = {"generated_ist":datetime.now(IST).isoformat(timespec="seconds"),
               "requested_date":today.isoformat(),"market_date":None,
               "status":"NO VERIFIED TRADE", "data_source":EOD_SOURCE,
-              "candidates":[],"expert_trade_plans":[],"expert_opportunities":[],
+              "candidates":[],"expert_trade_plans":[],"expert_c_trade_plans":[],
+              "expert_opportunities":[],"active_plan_reviews":[],
                "prior_updates":[],"expert_prior_updates":[],"errors":[]}
     closure = market_closure(today)
     if closure:
@@ -311,8 +326,11 @@ def main():
         return 0
     state_path = Path(args.state)
     previous = {}
+    result["tracking_state_restored"] = False
     if state_path.exists():
-        try: previous = json.loads(state_path.read_text(encoding="utf-8"))
+        try:
+            previous = json.loads(state_path.read_text(encoding="utf-8"))
+            result["tracking_state_restored"] = True
         except (ValueError,OSError): result["errors"].append("Prior watch state could not be read")
     try:
         market_date,fo,cm,errors=most_recent(today)
@@ -328,10 +346,18 @@ def main():
             stocks=equity_rows(cm)
             prior,keep=track_prior(previous.get("active",[]),market_date,stocks)
             result["prior_updates"]=prior
-            expert_prior, expert_keep = track_expert_plans(previous.get("expert_active",[]), market_date, stocks)
+            picks,plans,c_plans,expert_ideas,watch,coverage,regimes,nf,snapshots=build_market_summary(market_date,fo,cm,hist)
+            expert_prior, expert_keep = review_research_plans(
+                previous.get("expert_active",[]), market_date, stocks, snapshots)
             result["expert_prior_updates"] = expert_prior
-            picks,plans,expert_ideas,watch,coverage,regimes,nf=build_market_summary(market_date,fo,cm,hist)
+            result["active_plan_reviews"] = expert_prior
+            # Do not reissue a fresh idea for a name already under review.
+            active_symbols = {item["signal"]["symbol"] for item in expert_keep}
+            plans = [p for p in plans if p["symbol"] not in active_symbols]
+            c_plans = [p for p in c_plans if p["symbol"] not in active_symbols]
+            expert_ideas = [w for w in expert_ideas if w["symbol"] not in active_symbols]
             result.update({"candidates":picks, "expert_trade_plans":plans,
+                           "expert_c_trade_plans":c_plans,
                            "expert_opportunities":expert_ideas, "other_observations":watch,
                            "coverage":coverage,"futures_regimes":regimes,
                            "stock_futures_symbols":nf})
@@ -340,7 +366,7 @@ def main():
             current = [{"asof_date":market_date.isoformat(),"signal":pick} for pick in picks]
             deduped = {item["signal"]["signal_id"]: item for item in (keep + current)}
             new_expert = [{"asof_date":market_date.isoformat(), "last_checked":market_date.isoformat(),
-                           "observed_sessions":0, "signal":plan} for plan in plans]
+                           "observed_sessions":0, "signal":plan} for plan in (plans+c_plans)]
             expert_deduped = {item["signal"]["signal_id"]:item for item in (expert_keep+new_expert)}
             state_path.write_text(json.dumps({"last_date":market_date.isoformat(),
                                               "active":list(deduped.values())[-25:],
@@ -349,7 +375,7 @@ def main():
         result["errors"].append(str(exc)[:900])
     OUTPUT.joinpath("report.json").write_text(json.dumps(result,indent=2),encoding="utf-8")
     OUTPUT.joinpath("report.md").write_text(render(result),encoding="utf-8")
-    print(f"RESULT status={result['status']} market_date={result['market_date']} strict_candidates={len(result['candidates'])} expert_plans={len(result['expert_trade_plans'])} expert_watch={len(result['expert_opportunities'])} errors={len(result['errors'])}")
+    print(f"RESULT status={result['status']} market_date={result['market_date']} strict_candidates={len(result['candidates'])} expert_plans={len(result['expert_trade_plans'])} expert_c_plans={len(result['expert_c_trade_plans'])} expert_watch={len(result['expert_opportunities'])} active_reviews={len(result['active_plan_reviews'])} errors={len(result['errors'])}")
     print(f"COVERAGE={result.get('coverage',{})}")
     print(f"FUTURES_REGIMES={result.get('futures_regimes',{})}")
     if result["errors"]: print("NOTES:", " | ".join(result["errors"][:2]))
