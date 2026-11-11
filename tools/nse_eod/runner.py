@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from data import Unavailable, cash_history, most_recent, url_for
+from data import Unavailable, cash_history, most_recent, url_for, market_closure
 from logic import chain_metrics, expiry, num, research_candidate, tech_metrics, classify_futures, pct
 from expert import expert_watch_candidate
 
@@ -178,6 +178,16 @@ def render(data):
     if data.get("market_date"):
         day = date.fromisoformat(data["market_date"])
         lines += [f"- FO archive: {url_for('FO', day)}", f"- CM archive: {url_for('CM', day)}", ""]
+    if data["status"] == "MARKET HOLIDAY":
+        lines += [
+            f"**MARKET HOLIDAY — NO EOD SCAN REQUIRED.** {data.get('holiday_reason', 'Official NSE closure')}.",
+            "There was no regular NSE cash/F&O trading session on the requested date. "
+            "No current-session candidates, expert opportunities, or trading levels exist.",
+            "Official NSE 2026 trading holiday circulars: "
+            "https://nsearchives.nseindia.com/content/circulars/CMTR71775.pdf "
+            "and https://nsearchives.nseindia.com/content/circulars/FAOP71777.pdf",
+            ""
+        ]
     if data.get("errors"):
         lines += ["**Data notes:** " + " | ".join(data["errors"][:4]), ""]
     if data["status"] == "INCOMPLETE EOD RESEARCH":
@@ -245,6 +255,16 @@ def main():
               "requested_date":today.isoformat(),"market_date":None,
               "status":"NO VERIFIED TRADE", "data_source":EOD_SOURCE,
               "candidates":[],"expert_opportunities":[],"prior_updates":[],"errors":[]}
+    closure = market_closure(today)
+    if closure:
+        # A market holiday is not a failed NSE download and must never
+        # trigger a stale-data recovery scan or fabricated no-trade signal.
+        result["status"] = "MARKET HOLIDAY"
+        result["holiday_reason"] = closure
+        OUTPUT.joinpath("report.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+        OUTPUT.joinpath("report.md").write_text(render(result), encoding="utf-8")
+        print(f"RESULT status=MARKET HOLIDAY requested_date={today} reason={closure}")
+        return 0
     state_path = Path(args.state)
     previous = {}
     if state_path.exists():

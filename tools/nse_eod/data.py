@@ -20,6 +20,40 @@ HEADERS = {
     "Referer": "https://www.nseindia.com/all-reports-derivatives",
 }
 REQUIRED = {"TradDt", "FinInstrmTp", "TckrSymb", "ClsPric", "OpnIntrst", "ChngInOpnIntrst", "XpryDt", "StrkPric", "OptnTp", "TtlTradgVol"}
+# NSE equity and equity-derivatives trading holidays for 2026.
+# Official circulars: NSE/CMTR/71775 and NSE/FAOP/71777 (12 Dec 2025).
+# 15 Jan closure was added in the current NSE exchange holiday calendar.
+# Update from the official exchange calendar for each subsequent year.
+NSE_HOLIDAYS_2026 = {
+    date(2026, 1, 15): "Municipal Corporation Election - Maharashtra",
+    date(2026, 1, 26): "Republic Day",
+    date(2026, 3, 3): "Holi",
+    date(2026, 3, 26): "Shri Ram Navami",
+    date(2026, 3, 31): "Shri Mahavir Jayanti",
+    date(2026, 4, 3): "Good Friday",
+    date(2026, 4, 14): "Dr. Baba Saheb Ambedkar Jayanti",
+    date(2026, 5, 1): "Maharashtra Day",
+    date(2026, 5, 28): "Bakri Id",
+    date(2026, 6, 26): "Muharram",
+    date(2026, 9, 14): "Ganesh Chaturthi",
+    date(2026, 10, 2): "Mahatma Gandhi Jayanti",
+    date(2026, 10, 20): "Dussehra",
+    date(2026, 11, 10): "Diwali-Balipratipada",
+    date(2026, 11, 24): "Prakash Gurpurb Sri Guru Nanak Dev",
+    date(2026, 12, 25): "Christmas",
+}
+
+def market_closure(day: date) -> str | None:
+    """Return a verified regular NSE cash/F&O closure, or None if not listed.
+
+    Weekends are not regular sessions; special Muhurat sessions require
+    separately verified exchange handling and are not silently treated as
+    normal trading days.
+    """
+    if day.weekday() >= 5:
+        return "Weekend (no regular NSE cash/F&O session)"
+    return NSE_HOLIDAYS_2026.get(day)
+
 class Unavailable(RuntimeError):
     pass
 
@@ -88,7 +122,7 @@ def most_recent(asof: date, back_days: int = 8):
     errors = []
     for n in range(back_days):
         day = asof - timedelta(days=n)
-        if day.weekday() >= 5: continue
+        if market_closure(day): continue
         try:
             fo = load("FO", day)
             cm = load("CM", day)
@@ -103,7 +137,7 @@ def cash_history(latest: date, days: int = 115, workers: int = 3,
     history = {}
     errors = {}
     targets = [latest - timedelta(days=d) for d in range(1, days + 1)]
-    targets = [d for d in targets if d.weekday() < 5]
+    targets = [d for d in targets if not market_closure(d)]
     def task(day):
         return day, load("CM", day)
     for start in range(0, len(targets), batch_size):

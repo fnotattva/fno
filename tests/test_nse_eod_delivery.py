@@ -1,12 +1,13 @@
 import json
+import tempfile
 import sys
 import unittest
 from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "nse_eod"))
-from data import Unavailable, cash_history
-from runner import apply_coverage_status, render
+from data import Unavailable, cash_history, market_closure, most_recent
+from runner import apply_coverage_status, render, main
 
 class CoverageDeliveryTests(unittest.TestCase):
     def report(self, missing):
@@ -50,6 +51,43 @@ class CoverageDeliveryTests(unittest.TestCase):
         self.assertGreaterEqual(len(history), 4)
         self.assertIn("2026-11-04", errors)
         self.assertLessEqual(len(calls), 6)
+
+
+    def test_official_diwali_holiday_calendar(self):
+        self.assertEqual(market_closure(date(2026, 11, 10)), "Diwali-Balipratipada")
+        self.assertIsNone(market_closure(date(2026, 11, 11)))
+        self.assertIsNotNone(market_closure(date(2026, 11, 8)))
+
+    def test_holiday_report_never_downloads_or_issues_picks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("runner.OUTPUT", Path(tmp) / "out"), \
+                 patch("runner.most_recent") as archive_fetch, \
+                 patch("sys.argv", ["runner.py", "--asof", "2026-11-10"]):
+                self.assertEqual(main(), 0)
+                archive_fetch.assert_not_called()
+            result = json.loads((Path(tmp) / "out" / "report.json").read_text())
+            text = (Path(tmp) / "out" / "report.md").read_text()
+            self.assertEqual(result["status"], "MARKET HOLIDAY")
+            self.assertEqual(result["requested_date"], "2026-11-10")
+            self.assertIsNone(result["market_date"])
+            self.assertEqual(result["candidates"], [])
+            self.assertEqual(result["expert_opportunities"], [])
+            self.assertIn("MARKET HOLIDAY — NO EOD SCAN REQUIRED", text)
+            self.assertNotIn("**NO TRADE.**", text)
+
+    def test_archive_lookback_and_history_skip_official_holiday(self):
+        with patch("data.load", return_value=[{"TradDt": "2026-11-09"}]) as fetch:
+            last_date, _, _, _ = most_recent(date(2026, 11, 10))
+            self.assertEqual(last_date, date(2026, 11, 9))
+            self.assertTrue(all(call.args[1] != date(2026, 11, 10) for call in fetch.call_args_list))
+        with patch("data.load", return_value=[{"TradDt": "2026-11-09"}]) as fetch:
+            history, errors = cash_history(
+                date(2026, 11, 11), days=3, workers=1,
+                minimum_sessions=1, batch_size=3,
+            )
+            self.assertIn(date(2026, 11, 9), history)
+            self.assertNotIn("2026-11-10", errors)
+            self.assertTrue(all(call.args[1] != date(2026, 11, 10) for call in fetch.call_args_list))
 
 if __name__ == "__main__":
     unittest.main()
