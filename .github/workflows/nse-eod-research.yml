@@ -19,6 +19,7 @@ on:
     - cron: '25 15 * * 1-5'  # 20:55 IST third fallback, prior to 21:15 delivery
 permissions:
   contents: read
+  actions: read  # Read prior same-workflow state artifact if Actions cache is absent
 concurrency:
   group: nse-eod-research
   cancel-in-progress: false
@@ -40,6 +41,54 @@ jobs:
           key: nse-eod-state-${{ github.run_id }}
           restore-keys: |
             nse-eod-state-
+      - name: Restore state from last same-workflow artifact if cache expired
+        if: ${{ hashFiles('nse_eod_state.json') == '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Cache is fastest; this recoverable snapshot helps when cache expires.
+          # Read ONLY completed successful runs of this exact workflow/repository.
+          mkdir -p /tmp/fno-state-recovery
+          gh run list --workflow nse-eod-research.yml --branch main --limit 40 \
+            --json databaseId,status,conclusion \
+            --jq '.[] | select(.status=="completed" and .conclusion=="success") | .databaseId' \
+            > /tmp/fno-state-run-ids.txt || true
+          while read -r prior_run; do
+            [[ -n "$prior_run" ]] || continue
+            [[ "$prior_run" != "${{ github.run_id }}" ]] || continue
+            rm -f /tmp/fno-state-recovery/nse_eod_state.json
+            if gh run download "$prior_run" --name nse-eod-research-state \
+                  --dir /tmp/fno-state-recovery >/dev/null 2>&1; then
+              if python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("/tmp/fno-state-recovery/nse_eod_state.json")
+          try:
+              assert p.is_file() and 0 < p.stat().st_size < 8_000_000
+              state=json.loads(p.read_text(encoding="utf-8"))
+              assert isinstance(state,dict)
+              assert isinstance(state.get("expert_active"),list)
+              assert isinstance(state.get("active"),list)
+              assert len(state["expert_active"]) <= 10000
+              assert all(isinstance(item,dict) and isinstance(item.get("signal"),dict)
+                         and item["signal"].get("signal_id")
+                         and item["signal"].get("symbol")
+                         and item.get("asof_date")
+                         for item in state["expert_active"])
+          except (AssertionError,ValueError,OSError):
+              raise SystemExit(1)
+          PY
+              then
+                cp /tmp/fno-state-recovery/nse_eod_state.json ./nse_eod_state.json
+                echo "Recovered prior NSE research state from workflow run $prior_run"
+                break
+              fi
+            fi
+          done < /tmp/fno-state-run-ids.txt
+
       - name: Fetch, validate and analyze NSE EOD archives
         env:
           MANUAL_DATE: ${{ inputs.market_date }}
@@ -61,6 +110,14 @@ jobs:
             out/report.json
           retention-days: 14
           if-no-files-found: warn
+      - name: Upload recoverable research-state snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nse-eod-research-state
+          path: nse_eod_state.json
+          retention-days: 30
+          if-no-files-found: ignore
       - name: Persist candidate tracking between runs
         if: ${{ hashFiles('nse_eod_state.json') != '' }}
         uses: actions/cache/save@v4
