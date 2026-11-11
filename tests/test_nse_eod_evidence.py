@@ -74,6 +74,36 @@ class HistoricalEvidenceTests(unittest.TestCase):
                             for x in e["cm_archive_sources"]))
         self.assertIsNotNone(e["max_favourable_excursion_R_observed"])
 
+    def test_5_7_10_15_session_horizons_are_observations_not_profit(self):
+        from datetime import timedelta
+        path=[]
+        start=date(2026,11,12)
+        for i in range(15):
+            session=(start+timedelta(days=i)).isoformat()
+            path.append({"date":session,"open":106,"high":108,
+                         "low":104,"close":106+i*0.1,
+                         "cash_volume":100000,"cm_source":"nse date "+session})
+        trail=price_path_evidence(self.signal,path)
+        self.assertEqual(trail["observed_sessions"],15)
+        self.assertEqual(set(trail["horizon_cash_close_observations_5_7_10_15"]),
+                         {"5","7","10","15"})
+        for label in ("5","7","10","15"):
+            row=trail["horizon_cash_close_observations_5_7_10_15"][label]
+            self.assertIn("NOT REALIZED",row["status"])
+            self.assertTrue(row["cm_source"].startswith("nse date"))
+        self.assertFalse(trail["fills_known"])
+        self.assertFalse(trail["historical_cash_prices_adjusted_for_corporate_actions"])
+
+    def test_large_raw_price_jump_does_not_claim_adjusted_return(self):
+        path=[{"date":"2026-11-12","high":111,"low":104,"close":108,
+               "open":105,"cash_volume":100000,"cm_source":"nse"},
+              {"date":"2026-11-13","high":136,"low":128,"close":135,
+               "open":130,"cash_volume":100000,"cm_source":"nse"}]
+        e=price_path_evidence(self.signal,path)
+        self.assertEqual(len(e["corporate_action_or_gap_checks"]),1)
+        self.assertIn("split/bonus",e["corporate_action_or_gap_checks"][0]["warning"])
+        self.assertFalse(e["fills_known"])
+
     def test_same_day_stop_and_target_are_explicitly_ambiguous(self):
         path=[{"date":"2026-11-12","high":115,"low":101,"close":108,
                "open":106,"cash_volume":200000,
