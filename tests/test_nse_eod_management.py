@@ -87,6 +87,47 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue(u[0]["terminal_for_scenario"])
         self.assertEqual(kept,[])
 
+    def test_day_five_is_progress_checkpoint_not_automatic_exit(self):
+        item=self.item
+        sessions=["2026-11-12","2026-11-13","2026-11-16","2026-11-17","2026-11-18"]
+        for d in sessions:
+            updates,kept=self.review(item,d,hi=109,lo=106,close=106.1)
+            self.assertEqual(len(kept),1)
+            item=kept[0]
+        self.assertEqual(updates[0]["hypothetical_holding_sessions"],5)
+        self.assertIn("DAY-5 PROGRESS REVIEW",updates[0]["action_if_filled"])
+        self.assertEqual(updates[0]["provisional_max_holding_sessions"],10)
+        self.assertEqual(updates[0]["hypothetical_sessions_remaining"],5)
+        self.assertFalse(updates[0]["terminal_for_scenario"])
+
+    def test_day_seven_weak_no_progress_exits_before_ten(self):
+        item=self.item
+        sessions=["2026-11-12","2026-11-13","2026-11-16",
+                  "2026-11-17","2026-11-18","2026-11-19","2026-11-20"]
+        futures={**self.snap["future"],"SttlmPric":"100",
+                 "PrvsClsgPric":"100","ChngInOpnIntrst":"0"}
+        snapshot={**self.snap,"future":futures}
+        for d in sessions:
+            updates,kept=self.review(item,d,hi=109,lo=106,close=106.1,snap=snapshot)
+            if kept: item=kept[0]
+        self.assertIn("DAY-7 STAGNATION",updates[0]["action_if_filled"])
+        self.assertTrue(updates[0]["terminal_for_scenario"])
+        self.assertEqual(kept,[])
+
+    def test_ten_trading_sessions_hard_scenario_time_exit(self):
+        item=self.item
+        sessions=["2026-11-12","2026-11-13","2026-11-16","2026-11-17",
+                  "2026-11-18","2026-11-19","2026-11-20","2026-11-23",
+                  "2026-11-24","2026-11-25"]
+        for d in sessions:
+            updates,kept=self.review(item,d,hi=109,lo=106,close=107)
+            if kept: item=kept[0]
+        self.assertIn("MAXIMUM HOLDING PERIOD REACHED",updates[0]["status"])
+        self.assertIn("TIME EXIT",updates[0]["action_if_filled"])
+        self.assertEqual(updates[0]["hypothetical_holding_sessions"],10)
+        self.assertEqual(updates[0]["hypothetical_sessions_remaining"],0)
+        self.assertEqual(kept,[])
+
     def test_previous_suggested_trailing_stop_touch_ends_plan_not_faked_execution(self):
         updates,kept=self.review(self.item,"2026-11-12")
         self.assertEqual(len(kept),1)
@@ -146,7 +187,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertGreaterEqual(plan["modelled_net_rr_t1"],.60)
         self.assertGreater(plan["stop_loss"],0)
         self.assertLess(plan["stop_loss"],plan["entry_trigger"])
-        self.assertIsNone(plan["holding_max_sessions"])
+        self.assertEqual(plan["holding_max_sessions"],10)
         self.assertIsNone(expert_trade_plan(idea,tech,None,tier="C"))
 
 
