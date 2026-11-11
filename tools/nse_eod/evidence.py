@@ -108,6 +108,43 @@ def price_path_evidence(signal, trail):
         ):
             collision_days.append(bar["date"])
     after=[b for b in eligible if trigger_day and b["date"]>=trigger_day]
+    # Compare observation windows without claiming a triggered broker trade.
+    # Once EOD high/low possibly crossed trigger, closing prices for horizons
+    # 5/7/10/15 provide counterfactual cash-price paths ONLY. Never claim
+    # targets/stops actually filled or compare gross horizons as strategy P&L.
+    horizons={}
+    for n in (5,7,10,15):
+        if len(after)>=n:
+            last=after[n-1]
+            horizons[str(n)]={
+                "status":"OBSERVED CASH CLOSE — NOT REALIZED P&L",
+                "date":last["date"],"close":last["close"],
+                "gross_cash_move_pct":round(100*side*(last["close"]-entry)/entry,2),
+                "gross_cash_R_vs_reference_entry":round(
+                    side*(last["close"]-entry)/abs(entry-stop),2),
+                "cm_source":last["cm_source"],
+                "stop_touched_anytime_to_horizon":any(
+                    (row["low"]<=stop if side>0 else row["high"]>=stop)
+                    for row in after[:n]),
+                "t3_touched_anytime_to_horizon":any(
+                    (row["high"]>=t3 if side>0 else row["low"]<=t3)
+                    for row in after[:n]),
+            }
+        else:
+            horizons[str(n)]={
+                "status":"INSUFFICIENT COMPLETED NSE SESSIONS",
+                "observed_so_far":len(after),
+                "needed":n,
+            }
+    large_unadjusted_jumps=[]
+    for first,second in zip(trail,trail[1:]):
+        if first["close"]>0:
+            close_pct=100*(second["close"]/first["close"]-1)
+            if abs(close_pct)>=20:
+                large_unadjusted_jumps.append({
+                    "date":second["date"],"raw_close_to_close_pct":round(close_pct,2),
+                    "warning":"Investigate stock split/bonus/adjustment versus actual price gap before return comparisons",
+                })
     if after:
         best = max(side*(b["high"]-entry) if side>0 else
                    side*(b["low"]-entry) for b in after)
@@ -128,6 +165,9 @@ def price_path_evidence(signal, trail):
         "max_favourable_excursion_R_observed":mfe,
         "max_adverse_excursion_R_observed":mae,
         "history_sessions_returned":len(trail),
+        "horizon_cash_close_observations_5_7_10_15":horizons,
+        "corporate_action_or_gap_checks":large_unadjusted_jumps,
+        "historical_cash_prices_adjusted_for_corporate_actions":False,
         "cm_archive_sources": [b["cm_source"] for b in eligible[-5:]],
         "entry_confirmed":False,
         "fills_known":False,
