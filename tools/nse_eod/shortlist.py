@@ -1,8 +1,8 @@
 """Daily FnO Tattva actionable research shortlist allocation.
 
 Exactly zero to three *new* A/B/C conditional entry ideas across categories.
-Prior open research reviews count against a conservative active-idea capacity,
-but DO NOT imply an executed account position.
+Prior unconfirmed research reviews are deduplicated, NOT treated as filled positions.
+Only separately verified, supplied open holdings reduce actual capacity.
 """
 
 MAX_DAILY_FRESH = 3
@@ -10,7 +10,8 @@ IDEAL_FRESH = 2
 MAX_CONCURRENT_RESEARCH_IDEAS = 3
 
 
-def choose_daily_shortlist(a_tier, b_tier, c_tier, active_research=None):
+def choose_daily_shortlist(a_tier, b_tier, c_tier, active_research=None,
+                           verified_open_positions=None):
     """Choose the best two by default and an exceptional third when warranted.
 
     No selection is manufactured if insufficient signals qualify. A is always
@@ -24,7 +25,10 @@ def choose_daily_shortlist(a_tier, b_tier, c_tier, active_research=None):
         if isinstance(r, dict) and isinstance(r.get("signal"), dict)
     }
     active_symbols.discard(None)
-    slots = max(0, min(MAX_DAILY_FRESH, MAX_CONCURRENT_RESEARCH_IDEAS-len(active_symbols)))
+    # Existing research watches are not broker positions. Never silently
+    # suppress today's selection using unconfirmed potential fills.
+    confirmed = set(verified_open_positions or [])
+    slots = max(0, min(MAX_DAILY_FRESH, MAX_CONCURRENT_RESEARCH_IDEAS-len(confirmed)))
     pools = (
         ("A", list(a_tier or [])),
         ("B", list(b_tier or [])),
@@ -64,12 +68,14 @@ def choose_daily_shortlist(a_tier, b_tier, c_tier, active_research=None):
         "normal_fresh_goal": IDEAL_FRESH,
         "concurrent_research_cap":MAX_CONCURRENT_RESEARCH_IDEAS,
         "prior_research_ideas_under_review":len(active_symbols),
+        "verified_open_positions_count":len(confirmed),
         "fresh_research_slots":slots,
         "fresh_conditional_ideas":len(chosen),
         "qualified_pre_shortlist":len(filtered),
         "not_selected":max(0,len(filtered)-len(chosen)),
-        "note":("Tracked ideas count conservatively against capacity but may not "
-                "be real filled holdings; broker positions are unknown. An "
-                "exceptional third needs A-tier quality or B-tier momentum "
-                "and >=1.5R modelled net T1. Zero ideas is valid.")
+        "note":("Tracked watches are not assumed to be actual positions. "
+                "Until broker fills/holdings are supplied, concurrent live "
+                "exposure cannot be enforced: these are conditional ideas only. "
+                "An exceptional third requires A-tier quality or B-tier "
+                "momentum and >=1.5R modelled net T1. Zero ideas is valid.")
     }
