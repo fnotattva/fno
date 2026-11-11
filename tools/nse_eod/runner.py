@@ -13,6 +13,7 @@ from logic import chain_metrics, expiry, num, research_candidate, tech_metrics, 
 from expert import expert_watch_candidate
 from trade_plans import expert_trade_plan, track_expert_plans
 from management import review_research_plans
+from shortlist import choose_daily_shortlist
 
 IST = ZoneInfo("Asia/Kolkata")
 OUTPUT = Path("out")
@@ -138,7 +139,7 @@ def build_market_summary(asof, fo, cm, hist):
     covered["expert_trade_plan_candidates"] = len(plans)
     covered["expert_c_trade_plan_candidates"] = len(c_plans)
     covered["expert_watch_candidates"] = len(alternatives)
-    return (picks[:3], plans[:3], c_plans[:3], alternatives[:3],
+    return (picks[:12], plans[:12], c_plans[:12], alternatives[:3],
             regime_observations[:5], dict(covered), dict(regimes), len(futures),snapshots)
 
 def track_prior(prior, current_date, cash):
@@ -221,6 +222,15 @@ def render(data):
         lines += ["**TRACKING CAVEAT:** Prior GitHub Actions cache was not restored; older plans may not appear. Actual broker positions cannot be inferred.", ""]
     if data["status"] == "PARTIAL EOD RESEARCH":
         lines += ["**PARTIAL COVERAGE.** Listed ideas, if any, come only from stocks with complete validated inputs. An empty list is not a market-wide no-trade conclusion.", ""]
+    if data.get("shortlist_policy"):
+        policy=data["shortlist_policy"]
+        lines += [
+            "## Daily new-idea discipline — maximum 3 combined across A, B and C",
+            f"- Fresh conditional trade ideas selected: **{policy['fresh_conditional_ideas']}** (normal goal <=2, hard maximum 3, zero allowed).",
+            f"- {policy['qualified_pre_shortlist']} qualified ideas before final selection; {policy['not_selected']} excluded from fresh shortlist. Past review items are separate and are NOT extra new trade calls.",
+            f"- Existing research ideas under EOD review: {policy['prior_research_ideas_under_review']}; actual broker holdings: **NOT VERIFIED**. {policy['note']}",
+            ""
+        ]
     if data["status"] == "PARTIAL EOD RESEARCH" and not data.get("candidates"):
         covered = data.get("coverage",{}).get("valid_history_and_chain","unknown number of")
         lines += [f"**NO A-TIER TRADE AMONG {covered} FULLY COVERED STOCKS.** Incomplete names are excluded; this is NOT a complete-universe no-trade determination.", ""]
@@ -390,6 +400,9 @@ def main():
             plans = [p for p in plans if p["symbol"] not in active_symbols]
             c_plans = [p for p in c_plans if p["symbol"] not in active_symbols]
             expert_ideas = [w for w in expert_ideas if w["symbol"] not in active_symbols]
+            picks,plans,c_plans,selection_policy=choose_daily_shortlist(
+                picks,plans,c_plans,active_research=expert_keep)
+            result["shortlist_policy"]=selection_policy
             result.update({"candidates":picks, "expert_trade_plans":plans,
                            "expert_c_trade_plans":c_plans,
                            "expert_opportunities":expert_ideas, "other_observations":watch,
@@ -412,6 +425,7 @@ def main():
     OUTPUT.joinpath("report.md").write_text(render(result),encoding="utf-8")
     print(f"RESULT status={result['status']} market_date={result['market_date']} strict_candidates={len(result['candidates'])} expert_plans={len(result['expert_trade_plans'])} expert_c_plans={len(result['expert_c_trade_plans'])} expert_watch={len(result['expert_opportunities'])} active_reviews={len(result['active_plan_reviews'])} errors={len(result['errors'])}")
     print(f"COVERAGE={result.get('coverage',{})}")
+    print(f"FRESH_SHORTLIST={result.get('shortlist_policy',{})}")
     print(f"FUTURES_REGIMES={result.get('futures_regimes',{})}")
     if result["errors"]: print("NOTES:", " | ".join(result["errors"][:2]))
     return 0
