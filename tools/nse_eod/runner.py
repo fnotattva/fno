@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from data import Unavailable, cash_history, most_recent, url_for, market_closure
 from logic import chain_metrics, expiry, num, research_candidate, tech_metrics, classify_futures, pct
 from expert import expert_watch_candidate
+from trade_plans import expert_trade_plan, track_expert_plans
 
 IST = ZoneInfo("Asia/Kolkata")
 OUTPUT = Path("out")
@@ -93,6 +94,7 @@ def build_market_summary(asof, fo, cm, hist):
     # chain is incomplete, but retain minimal data/liquidity guardrails.
     primary_symbols = {item["symbol"] for item in picks}
     alternatives = []
+    plans = []
     for symbol, contracts in futures.items():
         if symbol in primary_symbols or symbol not in stocks:
             continue
@@ -108,13 +110,22 @@ def build_market_summary(asof, fo, cm, hist):
         options_context = chain_metrics(options, technical["close"]) if options else None
         idea = expert_watch_candidate(symbol, front, options_context, technical, asof)
         if idea is not None:
-            alternatives.append(idea)
+            proposed = expert_trade_plan(idea, technical, options_context, front)
+            if proposed is not None:
+                plans.append(proposed)
+            else:
+                alternatives.append(idea)
+    plans.sort(key=lambda item: (
+        item["pattern_priority"], item["modelled_net_rr_t1"],
+        item["cash_rvol20"], abs(item["futures_oi_change_pct"])
+    ), reverse=True)
     alternatives.sort(key=lambda item: (
         item["pattern_priority"], item["relative_volume"],
         abs(item["futures_oi_change_pct"]), item["cash_turnover_inr"]
     ), reverse=True)
+    covered["expert_trade_plan_candidates"] = len(plans)
     covered["expert_watch_candidates"] = len(alternatives)
-    return picks[:3], alternatives[:3], regime_observations[:5], dict(covered), dict(regimes), len(futures)
+    return picks[:3], plans[:3], alternatives[:3], regime_observations[:5], dict(covered), dict(regimes), len(futures)
 
 def track_prior(prior, current_date, cash):
     updates, kept = [], []
@@ -195,7 +206,10 @@ def render(data):
     if data["status"] == "PARTIAL EOD RESEARCH":
         lines += ["**PARTIAL COVERAGE.** Listed ideas, if any, come only from stocks with complete validated inputs. An empty list is not a market-wide no-trade conclusion.", ""]
     if data["status"] == "VERIFIED EOD RESEARCH" and not data.get("candidates"):
-        lines += ["**NO TRADE.** No stock passed the full futures OI, options-chain, technical-momentum and 2R risk gates. No candidate is being recommended.", ""]
+        if data.get("expert_trade_plans"):
+            lines += ["**NO A-TIER TRADE.** No stock passed all strict futures/OI/technicals/2R gates; separate lower-conviction conditional expert plans appear below.", ""]
+        else:
+            lines += ["**NO TRADE.** No stock passed the full futures OI, options-chain, technical-momentum and 2R risk gates. No A-tier candidate is being recommended.", ""]
     for n, c in enumerate(data.get("candidates", []), 1):
         lines += [f"## {n}. {c['symbol']} — {c['direction']} WATCH ({c['score']}/100 evidence score)",
                   f"- Futures {c['futures_expiry']}: {c['regime']}; settlement ₹{c['futures_settlement']:.2f} ({c['futures_change_pct']:+.2f}%), OI {c['futures_oi']:,.0f} ({c['futures_oi_change_pct']:+.2f}%; change {c['futures_oi_change']:+,.0f}).",
@@ -207,14 +221,34 @@ def render(data):
                   f"- Options expiry {c['options_expiry']}: max PE OI wall ₹{c['put_wall']:g} (previous ₹{c['previous_put_wall'] or 0:g}), max CE OI wall ₹{c['call_wall']:g} (previous ₹{c['previous_call_wall'] or 0:g}); nearest relevant walls PE ₹{c['near_put_wall'] or 0:g} / CE ₹{c['near_call_wall'] or 0:g}.",
                   f"- Full-chain max pain ₹{c['max_pain']:g} (previous ₹{c['previous_max_pain'] or 0:g}), PCR {c['pcr']:.3f} (previous {c['previous_pcr'] or 0:.3f}); PE/CE OI change {c['pe_oi_change']:+,}/{c['ce_oi_change']:+,}.",
                   f"- Option premium/OI proxies at highest walls: PE {c['put_wall_premium_proxy']['label']} (OI Δ {c['put_wall_premium_proxy']['oi_change']:+,}); CE {c['call_wall_premium_proxy']['label']} (OI Δ {c['call_wall_premium_proxy']['oi_change']:+,}). These do not establish actual writing or covering.",
-                  f"- **Next-session CASH reference trigger:** ₹{c['entry_trigger']:.2f}; hard SL ₹{c['stop_loss']:.2f}; T1 ₹{c['target_1']:.2f}; T2 ₹{c['target_2']:.2f}; modelled net T1 R:R {c['modelled_net_rr_t1']:.2f}:1 (assumed 0.15% round-trip costs).",
+                  f"- **Next-session CASH reference trigger:** ₹{c['entry_trigger']:.2f}; hard SL ₹{c['stop_loss']:.2f}; T1 ₹{c['target_1']:.2f}; T2 ₹{c['target_2']:.2f}; T3 ₹{c.get('target_3',c['target_2']):.2f} (stretch projection); modelled net T1 R:R {c['modelled_net_rr_t1']:.2f}:1 (assumed 0.15% round-trip costs).",
                   f"- Wait for confirmed 5-minute breakout/breakdown next session; do not chase an opening gap beyond ₹{c['gap_skip_level']:.2f}. Hold at most 1–5 sessions; recheck EOD OI and close. No trades are executed.",
                   ""]
+    if data["status"] in ("VERIFIED EOD RESEARCH", "PARTIAL EOD RESEARCH"):
+        plans = data.get("expert_trade_plans", [])
+        lines += ["## B. Expert Conditional Trade Plans — structure-based T1, no forced 2R gate", "",
+                  "B-tier is independent of A-tier. A plan is VALID FOR THE NEXT TWO TRADING SESSIONS ONLY, requires an unverified next-session five-minute breakout/breakdown and volume confirmation, and is NOT an automatically executable call. Strict A-tier conditions remain unchanged.", ""]
+        if not plans:
+            lines += ["**NO QUALIFYING B-TIER PLAN TODAY.** Expert-watch ideas below may lack safe stops, independent near-term target levels or sufficient directional confirmation.", ""]
+        for n, p in enumerate(plans, 1):
+            lines += [
+                f"### {n}. {p['symbol']} — {p['direction']} CONDITIONAL CASH RESEARCH PLAN (B-tier)",
+                f"- **Evidence:** {p['pattern']}; cash close ₹{p['cash_close']:.2f}; relative volume {p['cash_rvol20']:.2f}×. Futures {p['futures_regime']} (price {p['futures_change_pct']:+.2f}%, OI {p['futures_oi_change_pct']:+.2f}%).",
+                f"- **Technicals/options:** EMA20 ₹{p['ema20']:.2f}, EMA50 ₹{p['ema50']:.2f}, RSI14 {p['rsi14']:.1f}, MACD histogram {p['macd_hist']:+.3f}; near put/call walls {p['put_wall'] or 'unavailable'} / {p['call_wall'] or 'unavailable'}, max pain {p['max_pain'] or 'unavailable'}.",
+                f"- **ENTRY CASH trigger:** ₹{p['entry_trigger']:.2f} conditional on a confirmed 5-minute close beyond it + supportive volume. **STOP LOSS:** ₹{p['stop_loss']:.2f} (initial gross price risk {p['initial_risk_pct']:.2f}% before gaps/costs).",
+                f"- **T1:** ₹{p['target_1']:.2f} — {p['target_sources'][0]} (modelled net {p['modelled_net_rr_t1']:.2f}R).",
+                f"- **T2:** ₹{p['target_2']:.2f} — {p['target_sources'][1]} (modelled net {p['modelled_net_rr_t2']:.2f}R).",
+                f"- **T3:** ₹{p['target_3']:.2f} — {p['target_sources'][2]} (modelled net {p['modelled_net_rr_t3']:.2f}R, extension only).",
+                f"- **Trigger and gap discipline:** {p['entry_condition']} Do NOT chase beyond CASH ₹{p['gap_skip_level']:.2f}. Levels are not stock-futures contract prices.",
+                f"- **Exit/expiry:** {p['exit_rule']}",
+                f"- **What still fails strict A-tier or needs review:** {'; '.join(p['unresolved_evidence'])}. A low T1 R:R can still be unappealing after costs and hit-rate uncertainty; this is NOT an A-tier or guaranteed recommendation.",
+                ""
+            ]
     # These are NOT trade recommendations, and never silently replace NO TRADE.
     # They expose explicitly reasoned exceptions outside strict indicator gates.
     if data["status"] in ("VERIFIED EOD RESEARCH", "PARTIAL EOD RESEARCH"):
         ideas=data.get("expert_opportunities",[])
-        lines += ["## B. Expert Opportunities — discretionary-style research watchlist (NOT trade calls)", ""]
+        lines += ["## C. Expert Opportunities — discretionary-style WATCH ONLY (NOT trade calls)", ""]
         if not ideas:
             lines += ["**No additional credible ideas today.** Nothing else met the minimum independent pattern and liquidity checks.", ""]
         for number, idea in enumerate(ideas,1):
@@ -228,8 +262,13 @@ def render(data):
                 "- **Status: WATCH ONLY, not a recommendation.** Confirm with next-session price action, options positioning and execution costs before any separate trade plan.",
                 ""
             ]
+    if data.get("expert_prior_updates"):
+        lines += ["## Prior B-tier conditional plan observations — NOT verified fills"]
+        for u in data["expert_prior_updates"]:
+            lines.append(f"- {u['id']}: {u['status']}")
+        lines.append("")
     if data.get("prior_updates"):
-        lines += ["## Previous research watch updates"]
+        lines += ["## Previous A-tier research watch updates"]
         for u in data["prior_updates"]:
             lines.append(f"- {u['id']}: {u['status']}")
         lines.append("")
@@ -238,6 +277,7 @@ def render(data):
               "- OI buildup/covering is inferred from price and net OI, not direct identification of buyers/writers.",
               "- Put/call walls, Fibonacci levels, EMA/SMA, RSI and MACD are related proxies, not independent guarantees or targets; test historical performance before relying on any combination. Exchange prices may be corrected.",
               "- Positions are **not monitored intraday**. Daily OHLC does not establish order/stop sequence or a five-minute breakout close. For any actual trade, arrange broker-side stop protection; overnight gaps may exceed SL.",
+              "- B-tier target 1 is anchored to the closest previous price structure / opposing OI wall; projected T2/T3 extensions are explicitly labelled and may never be reached. A 0.75R T1 floor is NOT evidence of profitability or positive expectancy.",
               "- The 0.15% round-trip impact assumption is illustrative, not account-specific brokerage/taxes. Evidence scores are heuristics, not success probabilities.",
               "- Futures and options prices include expiry/basis risks; evaluate appropriate instrument separately before execution.",
               ""]
@@ -254,7 +294,8 @@ def main():
     result = {"generated_ist":datetime.now(IST).isoformat(timespec="seconds"),
               "requested_date":today.isoformat(),"market_date":None,
               "status":"NO VERIFIED TRADE", "data_source":EOD_SOURCE,
-              "candidates":[],"expert_opportunities":[],"prior_updates":[],"errors":[]}
+              "candidates":[],"expert_trade_plans":[],"expert_opportunities":[],
+               "prior_updates":[],"expert_prior_updates":[],"errors":[]}
     closure = market_closure(today)
     if closure:
         # A market holiday is not a failed NSE download and must never
@@ -284,21 +325,28 @@ def main():
             stocks=equity_rows(cm)
             prior,keep=track_prior(previous.get("active",[]),market_date,stocks)
             result["prior_updates"]=prior
-            picks,expert_ideas,watch,coverage,regimes,nf=build_market_summary(market_date,fo,cm,hist)
-            result.update({"candidates":picks, "expert_opportunities":expert_ideas, "other_observations":watch,
+            expert_prior, expert_keep = track_expert_plans(previous.get("expert_active",[]), market_date, stocks)
+            result["expert_prior_updates"] = expert_prior
+            picks,plans,expert_ideas,watch,coverage,regimes,nf=build_market_summary(market_date,fo,cm,hist)
+            result.update({"candidates":picks, "expert_trade_plans":plans,
+                           "expert_opportunities":expert_ideas, "other_observations":watch,
                            "coverage":coverage,"futures_regimes":regimes,
                            "stock_futures_symbols":nf})
             result["status"]="VERIFIED EOD RESEARCH"
             apply_coverage_status(result)
             current = [{"asof_date":market_date.isoformat(),"signal":pick} for pick in picks]
             deduped = {item["signal"]["signal_id"]: item for item in (keep + current)}
+            new_expert = [{"asof_date":market_date.isoformat(), "last_checked":market_date.isoformat(),
+                           "observed_sessions":0, "signal":plan} for plan in plans]
+            expert_deduped = {item["signal"]["signal_id"]:item for item in (expert_keep+new_expert)}
             state_path.write_text(json.dumps({"last_date":market_date.isoformat(),
-                                              "active":list(deduped.values())[-25:]},indent=2),encoding="utf-8")
+                                              "active":list(deduped.values())[-25:],
+                                              "expert_active":list(expert_deduped.values())[-25:]},indent=2),encoding="utf-8")
     except (Unavailable, ValueError, OSError) as exc:
         result["errors"].append(str(exc)[:900])
     OUTPUT.joinpath("report.json").write_text(json.dumps(result,indent=2),encoding="utf-8")
     OUTPUT.joinpath("report.md").write_text(render(result),encoding="utf-8")
-    print(f"RESULT status={result['status']} market_date={result['market_date']} strict_candidates={len(result['candidates'])} expert_watch={len(result['expert_opportunities'])} errors={len(result['errors'])}")
+    print(f"RESULT status={result['status']} market_date={result['market_date']} strict_candidates={len(result['candidates'])} expert_plans={len(result['expert_trade_plans'])} expert_watch={len(result['expert_opportunities'])} errors={len(result['errors'])}")
     print(f"COVERAGE={result.get('coverage',{})}")
     print(f"FUTURES_REGIMES={result.get('futures_regimes',{})}")
     if result["errors"]: print("NOTES:", " | ".join(result["errors"][:2]))
