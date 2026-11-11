@@ -10,6 +10,14 @@ from datetime import date
 from math import isfinite
 
 
+# Provisional time-exit policy. Calibrate 5/7/10/15 NSE-session horizons
+# using prospective or no-lookahead historical studies before claiming optimality.
+DEFAULT_HOLDING_MAX_SESSIONS = 10
+FIRST_REVIEW_SESSION = 5
+SECOND_REVIEW_SESSION = 7
+HORIZONS_FOR_VALIDATION = (5, 7, 10, 15)
+
+
 def positive(value):
     try:
         value = float(value)
@@ -22,10 +30,13 @@ def review_research_plans(prior, asof, cash, snapshots):
     """Review A/B/C research plans on every available completed NSE session.
 
     Pending untouched entry proposals expire after two verified trading
-    sessions. Once a trigger price was potentially touched, keep revisiting
-    the IF-FILLED scenario until original/prior suggested stop touches, T3
-    touches, or price+OI+technical deterioration suggests exit. No arbitrary
-    five-session exit. Never treat EOD observations as actual broker trades.
+    sessions. After a possible trigger-level touch, review an IF-FILLED
+    scenario each verified NSE session. Day 5 is a progress review, day 7
+    may trigger early exit on stalled weak momentum, and day 10 is the
+    provisional maximum; stops, T3 and adverse evidence can end it sooner.
+    No arbitrary calendar-day or five-session forced exit; all observations
+    remain UNVERIFIED broker fills. Validate 5/7/10/15 holding horizons
+    before claiming one is empirically superior.
     """
     updates, still_open = [], []
     for previous in prior or []:
@@ -97,8 +108,11 @@ def review_research_plans(prior, asof, cash, snapshots):
             adverse_cash = side*(close-ema) < 0
             adverse_macd = side*float(tech.get("macd_hist") or 0) < 0
             sign_close = side*(close-entry)
-            # An older plan may still carry holding_max_sessions=5 from the
-            # previous policy; it is now advisory history, not a time exit.
+            # Apply the newest owner's provisional 10-trading-session maximum
+            # even to older research plans carrying legacy 5/None metadata.
+            # This is not a known broker position or independently verified
+            # execution date; hold count starts on first EOD trigger touch.
+            max_hold = DEFAULT_HOLDING_MAX_SESSIONS
             # Suggested new stop applies from NEXT session; never retroactively
             # pretend a newly suggested stop was active during today's candle.
             previous_suggested = positive(previous.get("suggested_stop_if_filled")) or stop
@@ -160,12 +174,18 @@ def review_research_plans(prior, asof, cash, snapshots):
                     action = "EXIT OR REASSESS IF FILLED: PREVIOUS PROTECTIVE STOP IS BREACHED BY EOD CLOSE"
                     terminal = True
                 elif target_hit[2]:
-                    # T3 is the normal end of this particular research plan.
-                    # Continuing beyond T3 must be a NEW, independently
-                    # reassessed follow-through plan, not an auto-extension.
+                    # T3 is the normal end of this research plan.
                     action = ("T3 PRICE LEVEL REACHED: RECOMMEND CLOSE/BOOK REMAINDER "
                               "IF FILLED. VERIFY ACTUAL BROKER ORDERS; ONLY A NEW "
                               "SEPARATE EOD TREND PLAN MAY JUSTIFY HOLDING BEYOND T3")
+                    terminal = True
+                elif held_scenario >= max_hold:
+                    status = (f"MAXIMUM HOLDING PERIOD REACHED — {held_scenario} "
+                              "TRADING-SESSION IF-FILLED SCENARIO; ACTUAL ENTRY UNVERIFIED")
+                    action = ("TIME EXIT IF FILLED BY END OF TRADING SESSION 10; "
+                              "CLOSE THIS RESEARCH PLAN. Do not roll the old call "
+                              "forward automatically; a new separate idea needs "
+                              "independent fresh entry and risk validation.")
                     terminal = True
                 elif target_hit[1]:
                     action = "CONSIDER BOOKING AT T2 AND TRAIL REMAINDER IF CONFIRMED FILLED"
@@ -173,6 +193,18 @@ def review_research_plans(prior, asof, cash, snapshots):
                     action = "CONSIDER PARTIAL EXIT AT T1; TIGHTEN STOP ONLY FOR CONFIRMED OPEN POSITION"
                 elif adverse_futures or (adverse_cash and adverse_macd):
                     action = "REDUCE/EXIT IF FILLED; THESIS WEAKENING — RECHECK NEW CASH STRUCTURE AND OI"
+                elif (held_scenario >= SECOND_REVIEW_SESSION
+                      and sign_close < .20*abs(t1-entry)
+                      and not aligned_futures):
+                    action = ("EARLY EXIT IF FILLED AT DAY-7 STAGNATION REVIEW: "
+                              "less than 20% of the entry-to-T1 move achieved "
+                              "and no fresh aligned futures buildup.")
+                    terminal = True
+                elif (held_scenario >= FIRST_REVIEW_SESSION
+                      and sign_close < .20*abs(t1-entry)):
+                    action = ("DAY-5 PROGRESS REVIEW IF FILLED: little movement "
+                              "toward T1; reassess price/OI and consider reducing; "
+                              "do not hold just to reach the day-10 limit.")
                 elif side*(close-entry) > 0:
                     action = "HOLD IF CONFIRMED FILLED, WITH UPDATED PROTECTIVE STOP NEXT SESSION"
                 else:
@@ -198,7 +230,12 @@ def review_research_plans(prior, asof, cash, snapshots):
                 "hypothetical_holding_sessions":held_scenario if first_touched else 0,
                 "entry_price_level_ever_touched":bool(first_touched),
                 "entry_confirmed":False,"fill_status":"UNKNOWN — no broker fills supplied",
-                "lifecycle_policy":"Continue reviewing every available EOD until exit recommendation, stop/previous trail touch, or T3 touch — no automatic five-session termination",
+                "lifecycle_policy":"Review on day 5, consider early exit at day 7 if stalled; mandatory scenario time exit by day 10 if SL/T3/other evidence has not closed it; trading sessions only",
+                "provisional_max_holding_sessions":max_hold,
+                "time_checkpoints":[FIRST_REVIEW_SESSION,SECOND_REVIEW_SESSION],
+                "comparison_horizons_sessions":list(HORIZONS_FOR_VALIDATION),
+                "hypothetical_sessions_remaining":(max(0,max_hold-held_scenario)
+                    if first_touched else None),
                 "closure_reason":action if terminal else None,
                 "actual_position_known":False,"terminal_for_scenario":terminal,
                 "data_quality":"Current-session NSE cash, futures, option chain and technicals",
