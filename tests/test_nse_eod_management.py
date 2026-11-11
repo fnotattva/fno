@@ -103,6 +103,27 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(len(kept),1)
         self.assertNotIn("suggested_stop_next_session_if_filled",u[0])
 
+    def test_retest_requires_price_to_revisit_decision_level(self):
+        item={**self.item,"signal":{**self.sig,
+            "entry_pattern":"pullback to prior 20-session high, then bullish 5-minute reclaim"}}
+        u,k=self.review(item,"2026-11-12",hi=109,lo=107,close=108)
+        self.assertIn("NOT TRIGGERED",u[0]["status"])
+        self.assertFalse(u[0]["entry_price_level_ever_touched"])
+        self.assertEqual(len(k),1)
+        u,k=self.review(k[0],"2026-11-13",hi=109,lo=105,close=108)
+        self.assertTrue(u[0]["entry_price_level_ever_touched"])
+        self.assertIn("UNVERIFIED",u[0]["status"])
+        self.assertEqual(len(k),1)
+
+    def test_legacy_signal_missing_target3_remains_for_review_not_dropped(self):
+        legacy={**self.sig}
+        del legacy["target_3"]
+        item={**self.item,"signal":legacy}
+        u,k=self.review(item,"2026-11-12")
+        self.assertIn("REVIEW BLOCKED",u[0]["status"])
+        self.assertEqual(k,[item])
+        self.assertFalse(u[0]["actual_position_known"])
+
     def test_c_retest_risk_is_structural_not_fabricated_from_R(self):
         idea={"id":"20261111-DEMO-LONG-EXPERT","symbol":"DEMO",
               "directional_bias":"LONG","pattern_priority":4,
