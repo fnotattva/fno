@@ -72,6 +72,10 @@ def review_research_plans(prior, asof, cash, snapshots):
                 continue
             # Daily high/low establishes only *price level* touches.
             entry_hit = (high>=entry if side>0 else low<=entry)
+            # C-tier pullback/retest research must actually cross the proposed
+            # level intraday. A high alone is not evidence of a pullback.
+            if "pullback" in str(sig.get("entry_pattern","")).lower():
+                entry_hit = entry_hit and low <= entry <= high
             stop_hit = (low<=stop if side>0 else high>=stop)
             target_hit = [(high>=target if side>0 else low<=target) for target in (t1,t2,t3)]
             first_touched = previous.get("first_entry_level_touch")
@@ -207,6 +211,16 @@ def review_research_plans(prior, asof, cash, snapshots):
                                    "first_entry_level_touch":first_touched,
                                    "hypothetical_holding_sessions":held_scenario,
                                    "suggested_stop_if_filled":suggested})
-        except (KeyError,ValueError,TypeError,OverflowError):
-            continue
+        except (KeyError,ValueError,TypeError,OverflowError) as exc:
+            # Never silently lose older plans just because a legacy proposal
+            # lacks T3, a field changed, or a row has non-numeric content.
+            signal=previous.get("signal",{}) if isinstance(previous,dict) else {}
+            sid=signal.get("signal_id","UNIDENTIFIED-RESEARCH-PLAN")
+            symbol=signal.get("symbol","UNKNOWN")
+            updates.append({"id":sid,"symbol":symbol,"asof":asof.isoformat(),
+                            "status":"REVIEW BLOCKED — INVALID/INCOMPLETE PRIOR SIGNAL DATA",
+                            "action_if_filled":"Use existing broker protection; review/repair original idea data before suggesting changed levels",
+                            "reason":str(exc)[:150],"entry_confirmed":False,
+                            "actual_position_known":False})
+            still_open.append(previous)
     return updates,still_open
