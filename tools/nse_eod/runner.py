@@ -205,6 +205,9 @@ def render(data):
         lines += ["**NO NEW VERIFIED EOD PICKS.** Do not use stale or incomplete data as today's trade signal.", ""]
     if data["status"] == "PARTIAL EOD RESEARCH":
         lines += ["**PARTIAL COVERAGE.** Listed ideas, if any, come only from stocks with complete validated inputs. An empty list is not a market-wide no-trade conclusion.", ""]
+    if data["status"] == "PARTIAL EOD RESEARCH" and not data.get("candidates"):
+        covered = data.get("coverage",{}).get("valid_history_and_chain","unknown number of")
+        lines += [f"**NO A-TIER TRADE AMONG {covered} FULLY COVERED STOCKS.** Incomplete names are excluded; this is NOT a complete-universe no-trade determination.", ""]
     if data["status"] == "VERIFIED EOD RESEARCH" and not data.get("candidates"):
         if data.get("expert_trade_plans"):
             lines += ["**NO A-TIER TRADE.** No stock passed all strict futures/OI/technicals/2R gates; separate lower-conviction conditional expert plans appear below.", ""]
