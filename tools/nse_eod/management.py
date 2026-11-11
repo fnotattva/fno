@@ -26,7 +26,7 @@ def positive(value):
         return None
 
 
-def review_research_plans(prior, asof, cash, snapshots):
+def review_research_plans(prior, asof, cash, snapshots, derivatives_trails=None):
     """Review A/B/C research plans on every available completed NSE session.
 
     Pending untouched entry proposals expire after two verified trading
@@ -39,6 +39,7 @@ def review_research_plans(prior, asof, cash, snapshots):
     before claiming one is empirically superior.
     """
     updates, still_open = [], []
+    derivatives_trails = derivatives_trails or {}
     for previous in prior or []:
         try:
             sig = previous["signal"]
@@ -108,6 +109,21 @@ def review_research_plans(prior, asof, cash, snapshots):
             adverse_cash = side*(close-ema) < 0
             adverse_macd = side*float(tech.get("macd_hist") or 0) < 0
             sign_close = side*(close-entry)
+            fo_trail = derivatives_trails.get(symbol, [])
+            # At most five prior archival FO sessions plus current. Only
+            # consecutive AVAILABLE same-contract records qualify as a
+            # confirmed multi-day OI direction; never interpolate gaps.
+            current_valid = [i for i,obs in enumerate(fo_trail)
+                             if obs.get("status")=="VERIFIED NSE FO EOD"]
+            adverse_name = "SHORT BUILDUP" if side>0 else "LONG BUILDUP"
+            two_day_opposing_oi = (
+                len(current_valid)>=2
+                and current_valid[-1]==len(fo_trail)-1
+                and current_valid[-2]==len(fo_trail)-2
+                and fo_trail[-1]["date"]==asof.isoformat()
+                and all(fo_trail[i].get("futures_regime")==adverse_name
+                        for i in current_valid[-2:])
+            )
             # Apply the newest owner's provisional 10-trading-session maximum
             # even to older research plans carrying legacy 5/None metadata.
             # This is not a known broker position or independently verified
@@ -170,6 +186,11 @@ def review_research_plans(prior, asof, cash, snapshots):
                 if adverse_futures and (adverse_cash or adverse_macd):
                     action = "EXIT IF FILLED / DO NOT INITIATE: OI REVERSAL + TECHNICAL DETERIORATION"
                     terminal = True
+                elif two_day_opposing_oi and sign_close <= 0:
+                    action = ("EXIT IF FILLED / DO NOT INITIATE: TWO CONSECUTIVE "
+                              "VERIFIED SAME-CONTRACT OPPOSING FUTURES BUILDUP "
+                              "SESSIONS, CASH PRICE NO LONGER FAVOURABLE VS ENTRY")
+                    terminal = True
                 elif side*(close-effective_old_stop) <= 0:
                     action = "EXIT OR REASSESS IF FILLED: PREVIOUS PROTECTIVE STOP IS BREACHED BY EOD CLOSE"
                     terminal = True
@@ -226,6 +247,8 @@ def review_research_plans(prior, asof, cash, snapshots):
                 "ema20":round(ema,2),"rsi14":round(float(tech.get("rsi14") or 0),1),
                 "macd_hist":round(float(tech.get("macd_hist") or 0),4),
                 "opposing_oi_wall":opposing,
+                "historical_fo_sessions_provided":len(fo_trail),
+                "two_verified_consecutive_adverse_futures_oi_days":two_day_opposing_oi,
                 "observed_sessions_since_signal":pending_sessions,
                 "hypothetical_holding_sessions":held_scenario if first_touched else 0,
                 "entry_price_level_ever_touched":bool(first_touched),
