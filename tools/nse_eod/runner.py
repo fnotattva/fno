@@ -139,7 +139,7 @@ def build_market_summary(asof, fo, cm, hist):
     covered["expert_trade_plan_candidates"] = len(plans)
     covered["expert_c_trade_plan_candidates"] = len(c_plans)
     covered["expert_watch_candidates"] = len(alternatives)
-    return (picks[:12], plans[:12], c_plans[:12], alternatives[:3],
+    return (picks, plans, c_plans, alternatives[:3],
             regime_observations[:5], dict(covered), dict(regimes), len(futures),snapshots)
 
 def track_prior(prior, current_date, cash):
@@ -225,9 +225,10 @@ def render(data):
     if data.get("shortlist_policy"):
         policy=data["shortlist_policy"]
         lines += [
-            "## Daily new-idea discipline — maximum 3 combined across A, B and C",
-            f"- Fresh conditional trade ideas selected: **{policy['fresh_conditional_ideas']}** (normal goal <=2, hard maximum 3, zero allowed).",
-            f"- {policy['qualified_pre_shortlist']} qualified ideas before final selection; {policy['not_selected']} excluded from fresh shortlist. Past review items are separate and are NOT extra new trade calls.",
+            "## Daily new-idea discipline — 2 normal, no arbitrary hard cap on exceptional ideas",
+            f"- **Fresh actionable conditional trade ideas: {policy['fresh_conditional_ideas']} across A+B+C.** Normal goal {policy['normal_fresh_goal']}; exceptional additional ideas {policy['exceptional_ideas_beyond_normal']}. No setup is forced, and evidence-gated ideas beyond three are permitted.",
+            "- Strong setups may be correlated by industry/market; including them in research does NOT mean every idea should be executed.",
+            f"- {policy['qualified_pre_shortlist']} candidate setups before final selection; {policy['not_selected']} did not meet the extra-idea gate. Earlier daily-review items remain separate and are NOT fresh calls.",
             f"- Existing research ideas under EOD review: {policy['prior_research_ideas_under_review']}; actual broker holdings: **NOT VERIFIED**. {policy['note']}",
             ""
         ]
@@ -251,7 +252,7 @@ def render(data):
                   f"- Full-chain max pain ₹{c['max_pain']:g} (previous ₹{c['previous_max_pain'] or 0:g}), PCR {c['pcr']:.3f} (previous {c['previous_pcr'] or 0:.3f}); PE/CE OI change {c['pe_oi_change']:+,}/{c['ce_oi_change']:+,}.",
                   f"- Option premium/OI proxies at highest walls: PE {c['put_wall_premium_proxy']['label']} (OI Δ {c['put_wall_premium_proxy']['oi_change']:+,}); CE {c['call_wall_premium_proxy']['label']} (OI Δ {c['call_wall_premium_proxy']['oi_change']:+,}). These do not establish actual writing or covering.",
                   f"- **Next-session CASH reference trigger:** ₹{c['entry_trigger']:.2f}; hard SL ₹{c['stop_loss']:.2f}; T1 ₹{c['target_1']:.2f}; T2 ₹{c['target_2']:.2f}; T3 ₹{c.get('target_3',c['target_2']):.2f} (stretch projection); modelled net T1 R:R {c['modelled_net_rr_t1']:.2f}:1 (assumed 0.15% round-trip costs).",
-                  f"- Wait for confirmed 5-minute breakout/breakdown next session; do not chase an opening gap beyond ₹{c['gap_skip_level']:.2f}. Hold at most 1–5 sessions; recheck EOD OI and close. No trades are executed.",
+                  f"- Wait for confirmed 5-minute breakout/breakdown next session; do not chase an opening gap beyond ₹{c['gap_skip_level']:.2f}. For a potentially triggered level, review every EOD until exit/stop/T3 rather than time-exiting at five days. No trades are executed.",
                   ""]
     if data["status"] in ("VERIFIED EOD RESEARCH", "PARTIAL EOD RESEARCH"):
         plans = data.get("expert_trade_plans", [])
@@ -289,7 +290,7 @@ def render(data):
                 f"- **T3 ₹{p['target_3']:.2f} | net {p['modelled_net_rr_t3']:.2f}R** — {p['target_sources'][2]}.",
                 f"- **Illustrative R benchmarks, NOT imposed targets:** 0.6R ₹{p['rr_reference_points']['0.6R']:.2f}; 1.5R ₹{p['rr_reference_points']['1.5R']:.2f}; 3R ₹{p['rr_reference_points']['3.0R']:.2f}.",
                 f"- **Evidence and caveats:** EMA20 ₹{p['ema20']:.2f}, EMA50 ₹{p['ema50']:.2f}, RSI14 {p['rsi14']:.1f}, MACD histogram {p['macd_hist']:+.4f}; PE wall {p['put_wall'] or 'unavailable'} / CE wall {p['call_wall'] or 'unavailable'}, max pain {p['max_pain'] or 'unavailable'}. {'; '.join(p['unresolved_evidence'])}.",
-                f"- **Lifecycle:** Pending idea expires after {p['valid_for_next_sessions']} trading sessions; if separately confirmed filled, reassess daily for no more than {p['holding_max_sessions']} trading sessions. {p['exit_rule']}",
+                f"- **Lifecycle:** Pending idea expires after {p['valid_for_next_sessions']} trading sessions; if separately confirmed filled, reassess every EOD until evidence-based EXIT, original/proposed trailing stop touch, or T3 level touch; no arbitrary five-day expiry. {p['exit_rule']}",
                 ""
             ]
         ideas=data.get("expert_opportunities",[])
@@ -308,8 +309,8 @@ def render(data):
                 ""
             ]
     if data.get("active_plan_reviews"):
-        lines += ["## D. Daily A/B/C research lifecycle review — HOLD / TIGHTEN / EXIT", "",
-                  "**These are strictly IF-FILLED scenarios, not verified portfolio positions.** Price touches do not establish orders or intraday event sequencing. Revised stops are for NEXT session if adopted via broker; they were not active during the observed day. Existing A-tier positions are reviewed on the same evidence-driven schedule.", ""]
+        lines += ["## D. Daily A/B/C research lifecycle review — HOLD / TIGHTEN / EXIT UNTIL CLOSURE", "",
+                  "**These are strictly IF-FILLED scenarios, not verified portfolio positions.** Price touches do not establish orders or intraday event sequencing. Revised stops are for NEXT session if adopted via broker; they were not active during the observed day. Older AND newly issued A/B/C proposals are reviewed every subsequent verified EOD until invalidation/stop/trail, an evidence-driven exit recommendation, or T3 level touch. There is no automatic five-session exit, and old research reviews do not suppress genuinely exceptional new ideas.", ""]
         for u in data["active_plan_reviews"]:
             lines += [f"### {u['symbol']} — {u['id']}",
                       f"- **Observed status:** {u['status']}",
@@ -417,8 +418,8 @@ def main():
                            if plan["symbol"] not in active_symbols]
             expert_deduped = {item["signal"]["signal_id"]:item for item in (expert_keep+new_expert)}
             state_path.write_text(json.dumps({"last_date":market_date.isoformat(),
-                                              "active":list(deduped.values())[-25:],
-                                              "expert_active":list(expert_deduped.values())[-25:]},indent=2),encoding="utf-8")
+                                              "active":list(deduped.values()),
+                                              "expert_active":list(expert_deduped.values())},indent=2),encoding="utf-8")
     except (Unavailable, ValueError, OSError) as exc:
         result["errors"].append(str(exc)[:900])
     OUTPUT.joinpath("report.json").write_text(json.dumps(result,indent=2),encoding="utf-8")
