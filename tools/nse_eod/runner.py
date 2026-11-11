@@ -339,6 +339,23 @@ def render(data):
                     f"- **Dated NSE CM price evidence:** {cash_hist.get('observed_sessions',0)} observed post-signal sessions. First entry-level touch {cash_hist.get('first_observed_entry_touch') or 'NONE'}; first T1/T2/T3 touches {touched.get('T1') or 'none'} / {touched.get('T2') or 'none'} / {touched.get('T3') or 'none'}; first original stop {touched.get('stop') or 'none'}.",
                     f"- **Observed CASH excursions (NOT realized returns):** best {cash_hist.get('max_favourable_excursion_R_observed')}R; worst {cash_hist.get('max_adverse_excursion_R_observed')}R from hypothetical trigger. Entry-and-stop/stop-and-target same-session ambiguity dates: {', '.join(cash_hist.get('entry_and_stop_same_day_ambiguity',[])) or 'none observed'}.",
                 ]
+                horizons=cash_hist.get("horizon_cash_close_observations_5_7_10_15",{})
+                if horizons:
+                    def horizon_text(n):
+                        item=horizons.get(str(n),{})
+                        return (f"{n}: {item['gross_cash_move_pct']:+.2f}% gross CASH mark ({item['date']})"
+                                if item.get('status')=="OBSERVED CASH CLOSE — NOT REALIZED P&L"
+                                else f"{n}: insufficient observations ({item.get('observed_so_far',0)}/{n})")
+                    lines += [
+                        "- **Holding-horizon evidence, not realized strategy returns:** "
+                        + "; ".join(horizon_text(n) for n in (5,7,10,15))
+                        + ". These are reference-entry to EOD-close marks; stop/target-first execution, gap risk, costs and verified fills are NOT modelled.",
+                    ]
+                if cash_hist.get("corporate_action_or_gap_checks"):
+                    lines += [
+                        "**Unadjusted-price warning:** a raw cash close-to-close jump exceeded 20%; "
+                        "validate corporate actions/price adjustments before interpreting older returns.",
+                    ]
             fo_hist=u.get("historical_fo_evidence",{})
             if fo_hist:
                 lines += [
