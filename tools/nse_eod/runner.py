@@ -252,7 +252,7 @@ def render(data):
                   f"- Full-chain max pain ₹{c['max_pain']:g} (previous ₹{c['previous_max_pain'] or 0:g}), PCR {c['pcr']:.3f} (previous {c['previous_pcr'] or 0:.3f}); PE/CE OI change {c['pe_oi_change']:+,}/{c['ce_oi_change']:+,}.",
                   f"- Option premium/OI proxies at highest walls: PE {c['put_wall_premium_proxy']['label']} (OI Δ {c['put_wall_premium_proxy']['oi_change']:+,}); CE {c['call_wall_premium_proxy']['label']} (OI Δ {c['call_wall_premium_proxy']['oi_change']:+,}). These do not establish actual writing or covering.",
                   f"- **Next-session CASH reference trigger:** ₹{c['entry_trigger']:.2f}; hard SL ₹{c['stop_loss']:.2f}; T1 ₹{c['target_1']:.2f}; T2 ₹{c['target_2']:.2f}; T3 ₹{c.get('target_3',c['target_2']):.2f} (stretch projection); modelled net T1 R:R {c['modelled_net_rr_t1']:.2f}:1 (assumed 0.15% round-trip costs).",
-                  f"- Wait for confirmed 5-minute breakout/breakdown next session; do not chase an opening gap beyond ₹{c['gap_skip_level']:.2f}. For a potentially triggered level, review every EOD until exit/stop/T3 rather than time-exiting at five days. No trades are executed.",
+                  f"- Wait for confirmed 5-minute breakout/breakdown next session; do not chase an opening gap beyond ₹{c['gap_skip_level']:.2f}. For a potentially triggered level, review every NSE EOD until stop/T3/evidence-based early exit or the PROVISIONAL ten-trading-session time limit. Day 5 progress review, day 7 early-exit check. No trades are executed.",
                   ""]
     if data["status"] in ("VERIFIED EOD RESEARCH", "PARTIAL EOD RESEARCH"):
         plans = data.get("expert_trade_plans", [])
@@ -290,7 +290,7 @@ def render(data):
                 f"- **T3 ₹{p['target_3']:.2f} | net {p['modelled_net_rr_t3']:.2f}R** — {p['target_sources'][2]}.",
                 f"- **Illustrative R benchmarks, NOT imposed targets:** 0.6R ₹{p['rr_reference_points']['0.6R']:.2f}; 1.5R ₹{p['rr_reference_points']['1.5R']:.2f}; 3R ₹{p['rr_reference_points']['3.0R']:.2f}.",
                 f"- **Evidence and caveats:** EMA20 ₹{p['ema20']:.2f}, EMA50 ₹{p['ema50']:.2f}, RSI14 {p['rsi14']:.1f}, MACD histogram {p['macd_hist']:+.4f}; PE wall {p['put_wall'] or 'unavailable'} / CE wall {p['call_wall'] or 'unavailable'}, max pain {p['max_pain'] or 'unavailable'}. {'; '.join(p['unresolved_evidence'])}.",
-                f"- **Lifecycle:** Pending idea expires after {p['valid_for_next_sessions']} trading sessions; if separately confirmed filled, reassess every EOD until evidence-based EXIT, original/proposed trailing stop touch, or T3 level touch; no arbitrary five-day expiry. {p['exit_rule']}",
+                f"- **Lifecycle:** Pending idea expires after {p['valid_for_next_sessions']} trading sessions; if separately confirmed filled, reassess every NSE EOD; provisional hard maximum 10 trading sessions (review at 5, consider early exit at 7 if stalled), sooner on evidence-based EXIT, stop/trailing stop or T3. {p['exit_rule']}",
                 ""
             ]
         ideas=data.get("expert_opportunities",[])
@@ -309,8 +309,8 @@ def render(data):
                 ""
             ]
     if data.get("active_plan_reviews"):
-        lines += ["## D. Daily A/B/C research lifecycle review — HOLD / TIGHTEN / EXIT UNTIL CLOSURE", "",
-                  "**These are strictly IF-FILLED scenarios, not verified portfolio positions.** Price touches do not establish orders or intraday event sequencing. Revised stops are for NEXT session if adopted via broker; they were not active during the observed day. Older AND newly issued A/B/C proposals are reviewed every subsequent verified EOD until invalidation/stop/trail, an evidence-driven exit recommendation, or T3 level touch. There is no automatic five-session exit, and old research reviews do not suppress genuinely exceptional new ideas.", ""]
+        lines += ["## D. Daily A/B/C research lifecycle review — HOLD / TIGHTEN / EXIT / TIME EXIT", "",
+                  "**These are strictly IF-FILLED scenarios, not verified portfolio positions.** Price touches do not establish orders or intraday event sequencing. Revised stops are for NEXT session if adopted via broker; they were not active during the observed day. Older AND newly issued A/B/C proposals are reviewed every subsequent verified EOD until invalidation/stop/trail, evidence-driven exit, T3 touch, or the provisional maximum 10-trading-session holding scenario. Day 5 is a progress checkpoint, day 7 a stalled-momentum early-exit review. Legacy 5-session limits are superseded; no new-idea quota is imposed by old research reviews.", ""]
         for u in data["active_plan_reviews"]:
             lines += [f"### {u['symbol']} — {u['id']}",
                       f"- **Observed status:** {u['status']}",
@@ -321,7 +321,7 @@ def render(data):
                     f"- **Risk/stop:** original ₹{u['original_stop']:.2f}; previous model stop ₹{u['prior_suggested_stop']:.2f}; proposed NEXT-session stop ₹{u['suggested_stop_next_session_if_filled']:.2f}. Never loosen if already protected tighter.",
                     f"- **Targets:** original T1/T2/T3 ₹{' / ₹'.join(f'{t:.2f}' for t in u['original_targets'])}; new conditional T1 ₹{u['updated_t1_if_filled']:.2f}. {u['target_note']}.",
                     f"- **Updated fundamentals of setup:** futures {u['futures_regime_today']} (price {u['futures_price_change_pct']:+.2f}% / OI {u['futures_oi_change_pct']:+.2f}%); EMA20 ₹{u['ema20']:.2f}, RSI14 {u['rsi14']:.1f}, MACD histogram {u['macd_hist']:+.4f}, opposing options wall {u['opposing_oi_wall'] or 'unavailable'}.",
-                    f"- **Elapsed sessions:** {u['observed_sessions_since_signal']} since issue; {u['hypothetical_holding_sessions']} hypothetical holding observations. Actual trade status: {u['fill_status']}.",
+                    f"- **Elapsed sessions:** {u['observed_sessions_since_signal']} since issue; {u['hypothetical_holding_sessions']} hypothetical holding observations; provisional exit horizon {u.get('provisional_max_holding_sessions',10)} NSE sessions, remaining {u.get('hypothetical_sessions_remaining','unknown')}. Actual trade status: {u['fill_status']}.",
                 ]
             lines.append("")
     if data.get("expert_prior_updates") and not data.get("active_plan_reviews"):
@@ -338,7 +338,7 @@ def render(data):
               "- These are conditional research WATCH levels, **not executed orders**. Cash-equity levels are not futures execution prices.",
               "- OI buildup/covering is inferred from price and net OI, not direct identification of buyers/writers.",
               "- Put/call walls, Fibonacci levels, EMA/SMA, RSI and MACD are related proxies, not independent guarantees or targets; test historical performance before relying on any combination. Exchange prices may be corrected.",
-              "- Positions are **not monitored intraday**. Daily OHLC does not establish order/stop sequence or a five-minute breakout close. For any actual trade, arrange broker-side stop protection; overnight gaps may exceed SL.",
+              "- Positions are **not monitored intraday**. Daily OHLC does not establish order/stop sequence or a five-minute breakout close. The provisional day-10 exit is an IF-FILLED scenario, measured from the first possible EOD trigger touch, not the actual broker fill date. For any actual trade, arrange broker-side protection; overnight gaps may exceed SL.",
               "- B/C T1 is structure-based, not chosen solely to fit an R ratio. C's 0.6R minimum net T1 is NOT evidence of a profitable strategy; a single 0.6R full exit needs over 62.5% winners before costs.",
               "- The 0.15% round-trip impact assumption is illustrative, not account-specific brokerage/taxes. Evidence scores are heuristics, not success probabilities.",
               "- Futures and options prices include expiry/basis risks; evaluate appropriate instrument separately before execution.",
