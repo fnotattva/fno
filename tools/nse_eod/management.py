@@ -1,0 +1,201 @@
+"""EOD-only conditional trade lifecycle reviews; no live position knowledge.
+
+Observed high/low cannot prove a fill, a 5-minute breakout, partial booking,
+or the order in which a stop/target was reached. Recommendations are scenario
+instructions *for a separately confirmed fill*, never actual order changes.
+"""
+from __future__ import annotations
+
+from datetime import date
+from math import isfinite
+
+
+def positive(value):
+    try:
+        value = float(value)
+        return value if isfinite(value) and value > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def review_research_plans(prior, asof, cash, snapshots):
+    """Review B/C positions on each completed NSE session, at most five held sessions.
+
+    The pending trigger is valid for two sessions. A potential entry-level touch
+    is tracked for up to five EOD holding scenarios, but is NEVER treated as a
+    confirmed trade. Invalid or missing symbol-specific inputs block new advice.
+    """
+    updates, still_open = [], []
+    for previous in prior or []:
+        try:
+            sig = previous["signal"]
+            symbol = sig["symbol"]
+            sid = sig["signal_id"]
+            issued = date.fromisoformat(previous["asof_date"])
+            checked = date.fromisoformat(previous.get("last_checked", previous["asof_date"]))
+            if asof <= checked:
+                still_open.append(previous)
+                continue
+            if asof <= issued:
+                still_open.append(previous)
+                continue
+            row = cash.get(symbol)
+            snapshot = snapshots.get(symbol)
+            if not row or not snapshot or not snapshot.get("tech") or not snapshot.get("chain"):
+                updates.append({"id":sid,"symbol":symbol,
+                                "status":"REVIEW BLOCKED — CURRENT CASH / FUTURES / OPTION HISTORY INCOMPLETE",
+                                "action_if_filled":"Use broker-side protective stop; no verified updated levels available",
+                                "asof":asof.isoformat()})
+                still_open.append({**previous,"last_checked":asof.isoformat()})
+                continue
+            tech, chain, future = snapshot["tech"],snapshot["chain"],snapshot["future"]
+            close, high, low = [positive(row.get(k)) for k in ("ClsPric","HghPric","LwPric")]
+            atr, ema = positive(tech.get("atr14")), positive(tech.get("ema20"))
+            f_now = positive(future.get("SttlmPric")) or positive(future.get("ClsPric"))
+            f_prev, oi_now = positive(future.get("PrvsClsgPric")), positive(future.get("OpnIntrst"))
+            oi_delta = float(future.get("ChngInOpnIntrst") or 0)
+            if (not all((close,high,low,atr,ema,f_now,f_prev,oi_now))
+                    or high < low or (oi_now-oi_delta) <= 0):
+                updates.append({"id":sid,"symbol":symbol,
+                                "status":"REVIEW BLOCKED — INVALID CURRENT NSE OBSERVATIONS",
+                                "action_if_filled":"Use broker-side protection; no new model stop",
+                                "asof":asof.isoformat()})
+                still_open.append({**previous,"last_checked":asof.isoformat()})
+                continue
+
+            side = 1 if sig["direction"]=="LONG" else -1
+            entry,stop = float(sig["entry_trigger"]),float(sig["stop_loss"])
+            t1,t2,t3 = (float(sig["target_"+str(n)]) for n in (1,2,3))
+            if not (side*(entry-stop)>0 and side*(t1-entry)>0):
+                continue
+            # Daily high/low establishes only *price level* touches.
+            entry_hit = (high>=entry if side>0 else low<=entry)
+            stop_hit = (low<=stop if side>0 else high>=stop)
+            target_hit = [(high>=target if side>0 else low<=target) for target in (t1,t2,t3)]
+            first_touched = previous.get("first_entry_level_touch")
+            if not first_touched and entry_hit:
+                first_touched = asof.isoformat()
+            pending_sessions = int(previous.get("observed_sessions",0))+1
+            held_scenario = int(previous.get("hypothetical_holding_sessions",0))
+            if first_touched:
+                held_scenario += 1
+            f_change = 100*(f_now/f_prev-1)
+            oi_change = 100*(oi_now/(oi_now-oi_delta)-1)
+            if f_change > .05 and oi_change > .5: regime="LONG BUILDUP"
+            elif f_change < -.05 and oi_change > .5: regime="SHORT BUILDUP"
+            elif f_change > .05 and oi_change < -.5: regime="SHORT COVERING"
+            elif f_change < -.05 and oi_change < -.5: regime="LONG UNWINDING"
+            else: regime="MIXED / NEUTRAL"
+            adverse_futures = regime == ("SHORT BUILDUP" if side>0 else "LONG BUILDUP")
+            aligned_futures = regime == ("LONG BUILDUP" if side>0 else "SHORT BUILDUP")
+            adverse_cash = side*(close-ema) < 0
+            adverse_macd = side*float(tech.get("macd_hist") or 0) < 0
+            sign_close = side*(close-entry)
+            max_holding = int(sig.get("holding_max_sessions",5))
+            # Suggested new stop applies from NEXT session; never retroactively
+            # pretend a newly suggested stop was active during today's candle.
+            previous_suggested = positive(previous.get("suggested_stop_if_filled")) or stop
+            effective_old_stop = max(stop,previous_suggested) if side>0 else min(stop,previous_suggested)
+            candidate_support = (ema-side*.40*atr)
+            nearest_support = positive(tech.get("prev5_low" if side>0 else "prev5_high"))
+            if nearest_support:
+                possible_stop = nearest_support-side*.12*atr
+                candidate_support = max(candidate_support,possible_stop) if side>0 else min(candidate_support,possible_stop)
+            if target_hit[0]:
+                breakeven_after_cost = entry+side*.0015*entry
+                candidate_support = max(candidate_support, breakeven_after_cost) if side>0 else min(candidate_support,breakeven_after_cost)
+            stop_candidate = (max(effective_old_stop,candidate_support) if side>0
+                              else min(effective_old_stop,candidate_support))
+            # A tighter stop above/below current close would already be
+            # violated, so explain EXIT/REASSESS rather than publish it.
+            suggested = (round(stop_candidate,2) if side*(close-stop_candidate)>.15*atr
+                         else round(effective_old_stop,2))
+            # Reassess T1 if a new opposing OI wall lies between entry and old T1.
+            opposing = positive(chain.get("near_call_wall" if side>0 else "near_put_wall"))
+            rechecked_t1 = t1
+            target_note = "Original T1/T2/T3 remain scenario levels, not automatically re-priced"
+            if opposing and side*(opposing-entry)>.10*atr and side*(t1-opposing)>0:
+                adjusted = opposing-side*max(.05*atr,.0005*entry)
+                if side*(adjusted-entry)>.05*atr:
+                    rechecked_t1 = round(adjusted,2)
+                    target_note = "New opposing options wall is closer; proposed T1 is reduced (conditional, no order placed)"
+            status = "NOT TRIGGERED — VERIFY LIVE 5-MIN CONDITIONS"
+            action = "WAIT FOR CONFIRMED ENTRY; NO POSITION ASSUMED"
+            terminal = False
+            if stop_hit and entry_hit:
+                status = "ENTRY AND STOP LEVELS TOUCHED — INTRADAY ORDER UNKNOWN"
+                action = "NO AUTOMATIC HOLD; VERIFY BROKER FILLS AND STOP EXECUTION; IF STILL LONG/SHORT, REASSESS"
+                terminal = True
+            elif stop_hit:
+                status = "STOP LEVEL TOUCHED — ENTRY / FILL UNCONFIRMED"
+                action = "CANCEL UNFILLED IDEA; IF FILLED, CHECK BROKER STOP AND EXIT STATE"
+                terminal = True
+            elif not first_touched and pending_sessions >= int(sig.get("valid_for_next_sessions",2)):
+                status = "ENTRY WINDOW EXPIRED WITHOUT EOD PRICE TOUCH"
+                action = "CANCEL PENDING IDEA; RESEARCH FRESH ENTRY IF STILL INTERESTING"
+                terminal = True
+            elif first_touched:
+                ix = max((i+1 for i,x in enumerate(target_hit) if x),default=0)
+                status = ("T"+str(ix)+" LEVEL TOUCHED" if ix else "ENTRY LEVEL TOUCHED")
+                status += " — CASH 5-MIN CONFIRMATION / FILL UNVERIFIED"
+                if adverse_futures and (adverse_cash or adverse_macd):
+                    action = "EXIT IF FILLED / DO NOT INITIATE: OI REVERSAL + TECHNICAL DETERIORATION"
+                    terminal = True
+                elif side*(close-effective_old_stop) <= 0:
+                    action = "EXIT OR REASSESS IF FILLED: PREVIOUS PROTECTIVE STOP IS BREACHED BY EOD CLOSE"
+                    terminal = True
+                elif held_scenario >= max_holding:
+                    action = "TIME EXIT IF FILLED: FIVE-SESSION MAX HOLDING WINDOW REACHED"
+                    terminal = True
+                elif target_hit[2]:
+                    # An extension above T3 requires verified follow-through and
+                    # no nearby new contrary wall; otherwise prefer closing remainder.
+                    strong = side*(close-t3) > 0 and aligned_futures and positive(tech.get("rvol20") or 0) and float(tech.get("rvol20") or 0) >= 1.2
+                    near_wall = bool(opposing and side*(opposing-close)>0 and abs(opposing-close)<atr)
+                    action = ("HOLD ONLY A SMALL REMAINDER BEYOND T3 IF FILLED, WITH PROTECTIVE TRAIL; REASSESS NEXT EOD"
+                              if strong and not near_wall else "BOOK/EXIT REMAINDER AT T3 IF FILLED; DO NOT ASSUME FILL")
+                elif target_hit[1]:
+                    action = "CONSIDER BOOKING AT T2 AND TRAIL REMAINDER IF CONFIRMED FILLED"
+                elif target_hit[0]:
+                    action = "CONSIDER PARTIAL EXIT AT T1; TIGHTEN STOP ONLY FOR CONFIRMED OPEN POSITION"
+                elif adverse_futures or (adverse_cash and adverse_macd):
+                    action = "REDUCE/EXIT IF FILLED; THESIS WEAKENING — RECHECK NEW CASH STRUCTURE AND OI"
+                elif side*(close-entry) > 0:
+                    action = "HOLD IF CONFIRMED FILLED, WITH UPDATED PROTECTIVE STOP NEXT SESSION"
+                else:
+                    action = "REASSESS IF FILLED; PRICE BELOW/ABOVE ENTRY AGAIN — DO NOT ADD"
+            update={
+                "id":sid,"symbol":symbol,"direction":sig["direction"],
+                "market_date":sig.get("market_date"),"asof":asof.isoformat(),
+                "status":status, "action_if_filled":action,
+                "original_entry":round(entry,2),"original_stop":round(stop,2),
+                "prior_suggested_stop":round(effective_old_stop,2),
+                "suggested_stop_next_session_if_filled":suggested,
+                "original_targets":[round(t,2) for t in (t1,t2,t3)],
+                "updated_t1_if_filled":round(rechecked_t1,2),
+                "target_note":target_note,
+                "latest_cash_close":round(close,2),"cash_high":round(high,2),
+                "cash_low":round(low,2),"price_move_from_entry_pct":round(100*sign_close/entry,2),
+                "futures_regime_today":regime,"futures_price_change_pct":round(f_change,2),
+                "futures_oi_change_pct":round(oi_change,2),
+                "ema20":round(ema,2),"rsi14":round(float(tech.get("rsi14") or 0),1),
+                "macd_hist":round(float(tech.get("macd_hist") or 0),4),
+                "opposing_oi_wall":opposing,
+                "observed_sessions_since_signal":pending_sessions,
+                "hypothetical_holding_sessions":held_scenario if first_touched else 0,
+                "entry_price_level_ever_touched":bool(first_touched),
+                "entry_confirmed":False,"fill_status":"UNKNOWN — no broker fills supplied",
+                "actual_position_known":False,"terminal_for_scenario":terminal,
+                "data_quality":"Current-session NSE cash, futures, option chain and technicals",
+                "risk_note":"EOD data cannot establish intraday event sequence or a broker fill. Proposed changes start NEXT session only."
+            }
+            updates.append(update)
+            if not terminal:
+                still_open.append({**previous,"last_checked":asof.isoformat(),
+                                   "observed_sessions":pending_sessions,
+                                   "first_entry_level_touch":first_touched,
+                                   "hypothetical_holding_sessions":held_scenario,
+                                   "suggested_stop_if_filled":suggested})
+        except (KeyError,ValueError,TypeError,OverflowError):
+            continue
+    return updates,still_open
