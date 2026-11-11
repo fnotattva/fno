@@ -166,8 +166,8 @@ def expert_trade_plan(idea, tech, chain, future=None, tier="B"):
         "initial_risk_pct": round(100*risk/entry,2),
         "modelled_roundtrip_cost_pct": .15,
         "gap_skip_level": round(gap,2), "valid_for_next_sessions": 2,
-        "holding_max_sessions": None,
-        "holding_policy": "Review every NSE EOD until stop or proposed trail level touched, evidence-based exit, or T3 reached; never force a five-session exit",
+        "holding_max_sessions": 10,
+        "holding_policy": "Provisional maximum 10 NSE trading sessions after potential cash entry-level touch, day-5 checkpoint, day-7 stalled-momentum review; exit earlier on stop, prior trail, T3 or contrary evidence. Validate 5/7/10/15-session horizons in no-lookahead backtests",
         "entry_condition": ("Conditional " + trigger_kind +
             " only upon separately verified 5-minute CASH confirmation and adequate volume; "
             "recheck gap/slippage, new options OI and news. EOD files CANNOT verify entry. "
@@ -176,7 +176,9 @@ def expert_trade_plan(idea, tech, chain, future=None, tier="B"):
             "at T1/T2, manage remaining at T3 or trail beyond only with new evidence. "
             "Continue EOD HOLD/TIGHTEN/EXIT reviews until the stop/trailing stop is touched, "
             "T3 is touched, or new futures OI/price/technical evidence supports exit. "
-            "Pending entry expires after two sessions; there is NO mandatory five-session holding exit. "
+            "Pending entry expires after two sessions; IF FILLED use a provisional "
+            "maximum ten NSE trading sessions with a day-five progress review and "
+            "day-seven early-exit review if stalled. "
             "No order or stop adjustment is executed by this scanner."),
         "unresolved_evidence": idea.get("caveats", []),
         "data_quality": idea.get("data_quality"),
