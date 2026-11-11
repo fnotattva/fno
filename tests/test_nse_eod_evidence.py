@@ -85,8 +85,8 @@ class HistoricalEvidenceTests(unittest.TestCase):
         self.assertFalse(e["intraday_sequence_known"])
 
     def test_futures_history_same_contract_OI_regimes_and_wall(self):
-        a=self._fo(self.day1,9000,10000,103,105) # short buildup
-        b=self._fo(self.day2,10000,9000,102,103) # short buildup
+        a=self._fo(self.day1,11000,10000,103,105) # short buildup
+        b=self._fo(self.day2,12000,11000,102,103) # short buildup
         paths=build_cash_paths(self.hist,self.day2,[self.today_cash],
                                self.prior)
         def loader(segment,day):
