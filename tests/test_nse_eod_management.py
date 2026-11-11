@@ -72,15 +72,28 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("ORDER UNKNOWN",u[0]["status"])
         self.assertEqual(k,[])
 
-    def test_max_five_holding_scenarios_then_time_exit(self):
+    def test_review_continues_after_five_and_terminates_at_t3(self):
         item=self.item
-        dates=["2026-11-12","2026-11-13","2026-11-16","2026-11-17","2026-11-18"]
+        dates=["2026-11-12","2026-11-13","2026-11-16","2026-11-17",
+               "2026-11-18","2026-11-19","2026-11-20"]
         for d in dates:
             u,kept=self.review(item,d,hi=109,lo=106,close=107)
-            if kept:
-                item=kept[0]
-        self.assertEqual(u[0]["hypothetical_holding_sessions"],5)
-        self.assertIn("TIME EXIT",u[0]["action_if_filled"])
+            self.assertEqual(len(kept),1)
+            item=kept[0]
+        self.assertEqual(u[0]["hypothetical_holding_sessions"],7)
+        self.assertNotIn("TIME EXIT",u[0]["action_if_filled"])
+        u,kept=self.review(item,"2026-11-23",hi=116,lo=106,close=115)
+        self.assertIn("T3 PRICE LEVEL REACHED",u[0]["action_if_filled"])
+        self.assertTrue(u[0]["terminal_for_scenario"])
+        self.assertEqual(kept,[])
+
+    def test_previous_suggested_trailing_stop_touch_ends_plan_not_faked_execution(self):
+        updates,kept=self.review(self.item,"2026-11-12")
+        self.assertEqual(len(kept),1)
+        self.assertGreater(kept[0]["suggested_stop_if_filled"],102)
+        updates,kept=self.review(kept[0],"2026-11-13",hi=109,lo=102.1,close=106)
+        self.assertIn("TRAILING-STOP LEVEL TOUCHED",updates[0]["status"])
+        self.assertIn("verify broker",updates[0]["action_if_filled"])
         self.assertEqual(kept,[])
 
     def test_missing_chain_prevents_updated_stop(self):
@@ -112,7 +125,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertGreaterEqual(plan["modelled_net_rr_t1"],.60)
         self.assertGreater(plan["stop_loss"],0)
         self.assertLess(plan["stop_loss"],plan["entry_trigger"])
-        self.assertEqual(plan["holding_max_sessions"],5)
+        self.assertIsNone(plan["holding_max_sessions"])
         self.assertIsNone(expert_trade_plan(idea,tech,None,tier="C"))
 
 
