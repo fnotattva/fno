@@ -17,13 +17,20 @@ def _positive(value):
         return 0.0
 
 
-def expert_trade_plan(idea, tech, chain, future=None):
+def expert_trade_plan(idea, tech, chain, future=None, tier="B"):
+    """B: momentum confirmation; C: independent reversal/early-stage research.
+
+    C still requires valid price structure, real exchange data, safe stop,
+    and a level-anchored T1. It never becomes a trade by merely assigning
+    attractive R-multiples to arbitrary prices.
+    """
+    is_c = tier == "C"
     """Create a B-tier plan only if a credible T1 barrier and technical stop exist.
 
     No fixed 2R gate; T1 is BEFORE the nearest independently observed opposing
     price structure or option wall. No structural T1 => retain WATCH ONLY.
     """
-    if not idea or not chain or idea.get("pattern_priority", 0) < 3:
+    if tier not in ("B", "C") or not idea or not chain or (not is_c and idea.get("pattern_priority", 0) < 3):
         return None
     direction = idea.get("directional_bias")
     if direction not in ("LONG", "SHORT"):
@@ -37,21 +44,45 @@ def expert_trade_plan(idea, tech, chain, future=None):
     close, atr = _positive(tech.get("close")), _positive(tech.get("atr14"))
     entry = _positive(idea.get("price_decision_level"))
     stop = _positive(idea.get("indicative_invalidation"))
+    trigger_kind = "breakout/breakdown"
+    # For an unusually wide breakout candle, a C-level *retest* is an
+    # alternative to chasing above its high. Both levels are anchored to
+    # PREVIOUS 20-session structure, not a fabricated stop at a chosen R.
+    if is_c and not stop and "20-session cash breakout" in idea.get("pattern", "") and side > 0:
+        prior = _positive(tech.get("prev20_high"))
+        if prior and prior < close and close-prior <= 1.5*atr:
+            entry = prior + .10*atr
+            stop = prior - .70*atr
+            trigger_kind = "pullback to prior 20-session high, then bullish 5-minute reclaim"
+    if is_c and not stop and "20-session cash breakdown" in idea.get("pattern", "") and side < 0:
+        prior = _positive(tech.get("prev20_low"))
+        if prior and prior > close and prior-close <= 1.5*atr:
+            entry = prior - .10*atr
+            stop = prior + .70*atr
+            trigger_kind = "pullback to prior 20-session low, then bearish 5-minute rejection"
     if not min(close, atr, entry, stop) or side * (entry - stop) <= 0:
         return None
     rvol = _positive(idea.get("relative_volume"))
-    if rvol < 1.35:
+    if rvol < (1.20 if is_c else 1.35):
         return None
-    if regime not in ("LONG BUILDUP", "SHORT BUILDUP") and (idea.get("pattern_priority") < 4 or rvol < 1.5):
+    if not is_c and regime not in ("LONG BUILDUP", "SHORT BUILDUP") and (idea.get("pattern_priority") < 4 or rvol < 1.5):
         return None
     ema20 = _positive(tech.get("ema20"))
     rsi = _positive(tech.get("rsi14"))
     hist = float(tech.get("macd_hist") or 0)
     # Some A-tier trend gates may fail, but do not issue a B-tier plan against
     # both the current directional EMA20 and MACD histogram.
-    if not ema20 or side * (close - ema20) <= 0 or side * hist <= 0:
+    if not ema20:
         return None
-    if not (42 <= rsi <= 77 if side > 0 else 23 <= rsi <= 58):
+    if is_c:
+        # Do not make a plan when ALL momentum/positioning channels conflict.
+        corroboration = int(side*(close-ema20) > 0) + int(side*hist > 0)
+        corroboration += int(regime in (("LONG BUILDUP", "SHORT COVERING") if side>0 else ("SHORT BUILDUP", "LONG UNWINDING")))
+        if corroboration < 2:
+            return None
+    elif side * (close - ema20) <= 0 or side * hist <= 0:
+        return None
+    if not (38 <= rsi <= 79 if side > 0 and is_c else 21 <= rsi <= 62 if is_c else 42 <= rsi <= 77 if side > 0 else 23 <= rsi <= 58):
         return None
     future_underlying = _positive((future or {}).get("UndrlygPric"))
     if future_underlying and abs(future_underlying-close)/close > .025:
@@ -91,7 +122,8 @@ def expert_trade_plan(idea, tech, chain, future=None):
     t1 = deduped[0][0]-side*buffer
     cost = .0015*entry
     net_rr = lambda target: (side*(target-entry)-cost)/(risk+cost)
-    if side*(t1-entry) <= 0 or net_rr(t1) < .75 or abs(t1-entry)/entry > .085:
+    minimum_net_t1_r = .60 if is_c else .75
+    if side*(t1-entry) <= 0 or net_rr(t1) < minimum_net_t1_r or abs(t1-entry)/entry > .085:
         return None
     targets = [t1]
     sources = [deduped[0][1]+" (level-based)"]
@@ -111,10 +143,11 @@ def expert_trade_plan(idea, tech, chain, future=None):
     if len(set(round(t, 2) for t in targets)) != 3 or any(side*(t-entry) <= 0 for t in targets):
         return None
     gap = entry+side*.5*atr
-    signal_id = idea["id"].replace("-EXPERT", "-EXPERTPLAN")
+    signal_id = idea["id"].replace("-EXPERT", "-"+tier+"-EXPERTPLAN")
     return {
         "signal_id": signal_id, "symbol": idea["symbol"], "direction": direction,
-        "tier": "B — CONDITIONAL EXPERT TRADE PLAN", "market_date": idea["market_date"],
+        "tier": tier + " — CONDITIONAL EXPERT TRADE PLAN", "market_date": idea["market_date"],
+        "entry_pattern": trigger_kind,
         "pattern": idea["pattern"], "pattern_priority": idea["pattern_priority"],
         "cash_close": idea["cash_close"], "cash_rvol20": idea["relative_volume"],
         "futures_regime": regime, "futures_change_pct": idea["futures_change_pct"],
@@ -133,11 +166,21 @@ def expert_trade_plan(idea, tech, chain, future=None):
         "initial_risk_pct": round(100*risk/entry,2),
         "modelled_roundtrip_cost_pct": .15,
         "gap_skip_level": round(gap,2), "valid_for_next_sessions": 2,
-        "entry_condition": "Only after a next-session 5-minute CASH candle closes beyond trigger with supporting cash volume; recheck OI/news, spread and gap. The EOD engine CANNOT verify this.",
-        "exit_rule": "Hard stop after confirmed entry; consider partial exits at T1/T2, never assume breakeven stop fills; close/reassess after two subsequent trading sessions or material opposite signal.",
+        "holding_max_sessions": 5,
+        "entry_condition": ("Conditional " + trigger_kind +
+            " only upon separately verified 5-minute CASH confirmation and adequate volume; "
+            "recheck gap/slippage, new options OI and news. EOD files CANNOT verify entry. "
+            "A retest requires price to return to level then reclaim/reject it, not an automatic resting order."),
+        "exit_rule": ("Initial protective stop on verified actual fill; take/consider partial profits "
+            "at T1/T2, manage remaining at T3 or trail beyond only with new evidence. "
+            "Daily EOD HOLD/TIGHTEN/EXIT plan; time exit by 5 trading sessions after confirmed fill. "
+            "No order or stop adjustment is executed by this scanner."),
         "unresolved_evidence": idea.get("caveats", []),
         "data_quality": idea.get("data_quality"),
         "not_a_tier_a": True, "no_orders_placed": True,
+        "rr_reference_points": {"0.6R":round(entry+side*.6*risk,2),
+                                "1.5R":round(entry+side*1.5*risk,2),
+                                "3.0R":round(entry+side*3*risk,2)},
         "underlying": "NSE CASH reference, not stock-futures contract execution price",
     }
 
