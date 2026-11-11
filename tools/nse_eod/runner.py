@@ -267,7 +267,7 @@ def render(data):
     # They expose explicitly reasoned exceptions outside strict indicator gates.
     if data["status"] in ("VERIFIED EOD RESEARCH", "PARTIAL EOD RESEARCH"):
         c_plans=data.get("expert_c_trade_plans",[])
-        lines += ["## C. Early-stage expert conditional plans + remaining watch-only ideas", "",
+        lines += ["## C. Expert Opportunities — conditional plans + remaining watch-only ideas", "",
                   "C-tier is lower-conviction than A/B. An early-stage plan is issued only with an independent technical invalidation and price-structure T1; 0.6R at T1 is a net minimum, NOT a fixed mandatory target. Do not force a plan from an untradable watch.", ""]
         for n, p in enumerate(c_plans,1):
             lines += [
