@@ -102,6 +102,8 @@ def build_market_summary(asof, fo, cm, hist):
     alternatives = []
     plans = []
     c_plans = []
+    buildup_plans = []
+    buildup_evaluated = 0
     for symbol, contracts in futures.items():
         if symbol in primary_symbols or symbol not in stocks:
             continue
@@ -115,6 +117,14 @@ def build_market_summary(asof, fo, cm, hist):
             continue
         options = option_chains.get((symbol, expiry(front))) or []
         options_context = chain_metrics(options, technical["close"]) if options else None
+        if options_context:
+            buildup_evaluated += 1
+            buildup_idea = buildup_watch_candidate(symbol, front, options_context, technical, asof)
+            if buildup_idea:
+                buildup_plan = expert_trade_plan(buildup_idea, technical, options_context, front, tier="C")
+                if buildup_plan:
+                    buildup_plan["research_pathway"] = "FUTURES BUILDUP"
+                    buildup_plans.append(buildup_plan)
         idea = expert_watch_candidate(symbol, front, options_context, technical, asof)
         if idea is not None:
             proposed = expert_trade_plan(idea, technical, options_context, front)
@@ -126,6 +136,12 @@ def build_market_summary(asof, fo, cm, hist):
                     c_plans.append(conditional_c)
                 else:
                     alternatives.append(idea)
+    # No duplicates across original and independent buildup discovery.
+    existing_symbols = {item["symbol"] for item in plans+c_plans}
+    buildup_plans = [item for item in buildup_plans if item["symbol"] not in existing_symbols]
+    c_plans.extend(buildup_plans)
+    covered["futures_buildup_universe_evaluated"] = buildup_evaluated
+    covered["futures_buildup_plans_pre_shortlist"] = len(buildup_plans)
     plans.sort(key=lambda item: (
         item["pattern_priority"], item["modelled_net_rr_t1"],
         item["cash_rvol20"], abs(item["futures_oi_change_pct"])
@@ -143,6 +159,67 @@ def build_market_summary(asof, fo, cm, hist):
     covered["expert_watch_candidates"] = len(alternatives)
     return (picks, plans, c_plans, alternatives[:3],
             regime_observations[:5], dict(covered), dict(regimes), len(futures),snapshots)
+
+def buildup_watch_candidate(symbol, future, chain, tech, asof):
+    """Independent full-universe futures OI screen; no automatic call."""
+    if not chain or not tech:
+        return None
+    fp = num(future.get("SttlmPric")) or num(future.get("ClsPric"))
+    prev = num(future.get("PrvsClsgPric"))
+    oi = num(future.get("OpnIntrst"))
+    delta = num(future.get("ChngInOpnIntrst"))
+    if min(fp, prev, oi, oi-delta) <= 0:
+        return None
+    price_change = pct(fp, prev)
+    oi_change = pct(oi, oi-delta)
+    regime = classify_futures(price_change, oi_change)
+    direction = {"LONG BUILDUP":"LONG", "SHORT BUILDUP":"SHORT"}.get(regime)
+    if not direction or oi_change < 3 or abs(price_change) < .65:
+        return None
+    side = 1 if direction == "LONG" else -1
+    close, opening = num(tech.get("close")), num(tech.get("open"))
+    high, low, atr = (num(tech.get(k)) for k in ("high","low","atr14"))
+    ema, hist = num(tech.get("ema20")), num(tech.get("macd_hist"))
+    rsi, rvol = num(tech.get("rsi14")), num(tech.get("rvol20"))
+    volume = num(tech.get("cash_volume"))
+    if min(close,opening,high,low,atr,ema,volume) <= 0 or high <= low:
+        return None
+    if rvol < 1.5 or close*volume < 150_000_000 or num(future.get("TtlTradgVol")) < 100:
+        return None
+    if side*(close-opening) <= 0 or side*(close-ema) <= 0 or side*hist <= 0:
+        return None
+    if not (45 <= rsi <= 76 if side > 0 else 24 <= rsi <= 55):
+        return None
+    position = (close-low)/(high-low)
+    if (side > 0 and position < .65) or (side < 0 and position > .35):
+        return None
+    prior5 = num(tech.get("prev5_high" if side > 0 else "prev5_low"))
+    if prior5 <= 0 or side*(close-prior5) < -.35*atr:
+        return None
+    entry = high+max(.05*atr,close*.0004) if side>0 else low-max(.05*atr,close*.0004)
+    stop = low-.10*atr if side>0 else high+.10*atr
+    if abs(entry-stop)/entry > .045:
+        return None
+    return {
+        "id":f"{asof:%Y%m%d}-{symbol}-{direction}-EXPERT",
+        "symbol":symbol, "directional_bias":direction,
+        "pattern":"Independent futures buildup with five-session cash structure",
+        "pattern_priority":4, "market_date":asof.isoformat(),
+        "cash_close":round(close,2), "relative_volume":round(rvol,2),
+        "futures_regime":regime, "futures_change_pct":round(price_change,2),
+        "futures_oi_change_pct":round(oi_change,2),
+        "ema20":round(ema,2), "ema50":round(num(tech.get("ema50")),2),
+        "rsi14":round(rsi,1), "macd_hist":round(hist,4),
+        "put_wall":chain.get("near_put_wall"),
+        "call_wall":chain.get("near_call_wall"),
+        "max_pain":chain.get("max_pain"),
+        "price_decision_level":round(entry,2),
+        "indicative_invalidation":round(stop,2),
+        "data_quality":"Verified NSE EOD cash, same-contract futures and same-expiry options",
+        "caveats":["One-day OI buildup is not a validated trend",
+                   "No five-minute entry confirmation or verified fill",
+                   "Opposing option walls may move; reassess before entry"],
+    }
 
 def track_prior(prior, current_date, cash):
     updates, kept = [], []
@@ -224,6 +301,13 @@ def render(data):
         lines += ["**TRACKING CAVEAT:** Prior GitHub Actions cache was not restored; older plans may not appear. Actual broker positions cannot be inferred.", ""]
     if data["status"] == "PARTIAL EOD RESEARCH":
         lines += ["**PARTIAL COVERAGE.** Listed ideas, if any, come only from stocks with complete validated inputs. An empty list is not a market-wide no-trade conclusion.", ""]
+    if data.get("coverage", {}).get("futures_buildup_universe_evaluated") is not None:
+        coverage = data["coverage"]
+        lines += ["## Independent futures buildup evaluation",
+                  f"- Full-universe complete futures/options/technical records evaluated: {coverage['futures_buildup_universe_evaluated']}.",
+                  f"- Structurally qualified additional C plans before shortlist: {coverage['futures_buildup_plans_pre_shortlist']}.",
+                  "- Price and OI alone are NOT calls: a coherent stop, independently grounded T1, adequate net R and fresh entry confirmation remain mandatory.",
+                  ""]
     if data.get("shortlist_policy"):
         policy=data["shortlist_policy"]
         lines += [
