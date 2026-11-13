@@ -8,7 +8,7 @@ from runner import buildup_watch_candidate
 from trade_plans import expert_trade_plan
 
 def tech():
-    return {"close":112,"open":108,"high":113,"low":107,"atr14":5,
+    return {"close":112,"open":108,"high":113,"low":109,"atr14":5,
             "ema20":105,"ema50":102,"macd_hist":2,"rsi14":65,
             "cash_volume":2000000,"rvol20":2.5,
             "prev5_high":111,"prev5_low":98,
