@@ -6,3 +6,6 @@ It contains no data, secrets or trading calls.
 Initialized: 2026-11-04, Asia/Kolkata.
 Requested market session: 2026-11-12
 Reason: one current-session recovery scan requested on 2026-11-12 at 21:17 IST; no post-market current-session GitHub Actions run visible; use official FO/CM archives, historical cash/FO evidence and validate artifact freshness.
+
+Requested market session: 2026-11-16
+Reason: scheduled 21:15 IST delivery recovery at 21:20 IST; no current-session scheduled workflow run observed; trigger production scan for official NSE 16 November cash/FO archives and historical reviews.
