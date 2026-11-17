@@ -9,3 +9,6 @@ Reason: one current-session recovery scan requested on 2026-11-12 at 21:17 IST; 
 
 Requested market session: 2026-11-16
 Reason: scheduled 21:15 IST delivery recovery at 21:20 IST; no current-session scheduled workflow run observed; trigger production scan for official NSE 16 November cash/FO archives and historical reviews.
+
+Requested market session: 2026-11-17
+Reason: 2026-11-17 21:13 IST EOD delivery recovery; no current-session GitHub scan found; official NSE CM/FO archives and research verification required.
