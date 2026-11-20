@@ -18,3 +18,6 @@ Reason: 21:18 IST current-session delivery recovery; no current-day GitHub workf
 
 Requested market session: 2026-11-19
 Reason: 21:19 IST current-session delivery recovery; no 19 November production run visible. Trigger one official NSE EOD scan; preserve all research logic and state.
+
+Requested market session: 2026-11-20
+Reason: 21:17 IST EOD delivery recovery; no 20 November current-session production run in workflow list. Trigger one read-only NSE CM/FO official archive scan and historical plan reviews; preserve engine logic and state.
