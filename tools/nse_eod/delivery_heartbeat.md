@@ -21,3 +21,6 @@ Reason: 21:19 IST current-session delivery recovery; no 19 November production r
 
 Requested market session: 2026-11-20
 Reason: 21:17 IST EOD delivery recovery; no 20 November current-session production run in workflow list. Trigger one read-only NSE CM/FO official archive scan and historical plan reviews; preserve engine logic and state.
+
+Requested market session: 2026-11-23
+Reason: 21:18 IST scheduled report delivery recovery; no current-session production workflow run found. Trigger one official NSE CM/FO read-only scan and historical reviews without modifying engine logic.
