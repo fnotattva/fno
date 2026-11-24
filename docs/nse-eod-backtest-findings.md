@@ -264,3 +264,34 @@ worse: the current engine +0.14R vs +0.20R; the old engine −0.10R vs −0.01R.
 - An opposing OI regime **alone** now produces "HOLD WITH PROTECTIVE STOP — OI CONTEXT
   ONLY", never "REDUCE/EXIT".
 - "Reduce" is reserved for price evidence: a close beyond EMA20 with MACD against the trade.
+
+## Intraday entry confirmation test (TradingView 5-minute bars, 24 Nov 2026)
+
+**Sample:** 163 resolved plans from 14 Oct 2025 to 20 Nov 2026 (from that start date
+TradingView 5-minute history is available). These are the engine's own A/B/C plans.
+
+**How it was run:**
+- Each plan's levels were simulated on official NSE 5-minute bars, computed server-side
+  by a Pine script. Nothing was saved to the TradingView account.
+- All variants share the same stop, T1, 10-session cap, gap-skip/open-beyond-stop cancel
+  and 0.15% costs.
+- A plan skipped by a confirmation rule counts as 0R.
+
+| Entry rule | Trades | Avg R / trade | Win % | Avg R per plan |
+|---|---:|---:|---:|---:|
+| Enter on trigger touch (stop-entry order) | 163 | **+0.149** | 56% | **+0.149** |
+| Enter only after a 5-minute close beyond trigger | 147 | +0.120 | 61% | +0.108 |
+| 5-minute close + volume above its 20-bar average | 135 | +0.120 | 64% | +0.099 |
+| (Same plans, daily-bar replay) | 163 | +0.226 | 61% | +0.226 |
+
+**Findings**
+- The 5-minute confirmation skipped 16 plans that would have lost (−0.38R on average).
+- But on the 147 plans it did take, the later entry cut results from +0.21R to +0.12R.
+- Net effect vs entering on touch: **−0.04R per plan** (90% CI −0.10 to +0.02). Adding a
+  volume condition: −0.05R. Neither is significant, and neither helps.
+- On intraday data the touch entry made +0.15R vs +0.23R on daily bars. Realistic
+  expectancy is therefore nearer **+0.15R per trade**: daily bars cannot see adverse moves
+  within the entry day.
+- Implication: a stop-entry order at the trigger, with the gap-skip and open-beyond-stop
+  cancel rules, is at least as good as waiting for a 5-minute confirmation. The win rate
+  rises with confirmation but the average falls.
