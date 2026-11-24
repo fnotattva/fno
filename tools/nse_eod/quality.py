@@ -174,3 +174,23 @@ def delivery_context(symbol, today, history):
     past = [day[symbol] for day in (history or []) if symbol in day][-20:]
     rel = pct / (sum(past) / len(past)) if pct is not None and len(past) >= 10 and sum(past) > 0 else None
     return {"delivery_pct": pct, "delivery_rel20": round(rel, 2) if rel is not None else None}
+
+
+# --- Call grade (24 Nov 2026) ---------------------------------------------
+# Engine plans with cash RVOL20 >= 3.0x won 66% at T1 in BOTH 2025 and 2026
+# (EOD replay, +0.28R), vs 52-56% for 2-3x. On 5-minute intraday data, PRIME
+# plans entered on a 5-minute close beyond the trigger won 67% (+0.23R, n=60),
+# the best combination tested. PRIME = publishable call; STANDARD = research.
+PRIME_MIN_RVOL = 3.0
+
+
+def call_grade(plan):
+    rvol = _f(plan.get("cash_rvol20"))
+    if rvol is not None and rvol >= PRIME_MIN_RVOL:
+        return {"call_grade": "PRIME",
+                "call_grade_note": (f"RVOL {rvol:.2f}x >= {PRIME_MIN_RVOL:.1f}x. In the 2025-26 replay such plans "
+                                    "won ~66% at T1 in both years; enter only on a 5-minute close beyond the "
+                                    "trigger (within the gap-skip level). Historical, not a guarantee.")}
+    return {"call_grade": "STANDARD",
+            "call_grade_note": ("RVOL below the 3.0x PRIME threshold; replay win rate ~52-57%. Treat as "
+                                "research/watchlist rather than a published call.")}

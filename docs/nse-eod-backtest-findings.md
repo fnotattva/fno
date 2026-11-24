@@ -295,3 +295,44 @@ TradingView 5-minute history is available). These are the engine's own A/B/C pla
 - Implication: a stop-entry order at the trigger, with the gap-skip and open-beyond-stop
   cancel rules, is at least as good as waiting for a 5-minute confirmation. The win rate
   rises with confirmation but the average falls.
+
+## Price action (CPR etc.) and the PRIME call grade (24 Nov 2026)
+
+**CPR and classic price-action add-ons.** Tested on 898 engine-style breakout events and
+220 engine plans, 2025 vs 2026.
+
+| Add-on | Result |
+|---|---|
+| Daily and weekly CPR position | No new information: every breakout already closes beyond both CPRs |
+| Narrow CPR | Almost never coincides with breakouts (8 cases in 2 years) |
+| Inside day, NR7, HH-HL structure, wide-range bar | Sign flips between the two years; not adopted |
+
+**CPR intraday claims** (all liquid F&O stocks, next session):
+- A narrow CPR did *not* produce a bigger or trendier day: range 0.95 ATR vs 1.04 ATR for
+  wide-CPR days.
+- Opening above the CPR was followed by a slightly *lower* close (−0.14% / −0.06%), not
+  continuation. CPR bias rules are not supported on F&O stocks.
+
+**What moves accuracy: relative volume.** Engine plans with cash RVOL20 ≥ 3.0× compared
+with 2–3×, by year (EOD replay, R at T1):
+
+| | 2025 | 2026 |
+|---|---|---|
+| RVOL ≥ 3.0× | 66% win, +0.28R | 66% win, +0.29R |
+| RVOL 2–3× | 52% win, +0.05R | 56% win, +0.14R |
+
+On 5-minute intraday data (Oct 2025 – Nov 2026):
+
+| Plans | Entry rule | Win % | Avg R |
+|---|---|---:|---:|
+| RVOL ≥ 3.0× | 5-minute close beyond trigger | **67%** | **+0.23R** (n=60, best combination tested) |
+| RVOL ≥ 3.0× | Touch | 60% | +0.19R |
+| RVOL 2–3× | 5-minute close | 57% | +0.05R |
+
+**Engine change.** Every plan now carries `call_grade` = PRIME (RVOL ≥ 3.0×) or STANDARD,
+with a note, and PRIME plans rank first.
+- **PRIME** = publishable call, entered on a 5-minute close beyond the trigger within the
+  gap-skip level.
+- **STANDARD** = research / watchlist.
+- Frequency is roughly 4–5 filled PRIME trades a month. Samples are modest, so this is
+  historical evidence, not a guaranteed hit rate.

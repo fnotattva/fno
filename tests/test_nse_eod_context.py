@@ -82,3 +82,12 @@ class OIContextWordingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CallGradeTests(unittest.TestCase):
+    def test_prime_threshold(self):
+        from quality import call_grade
+        self.assertEqual(call_grade({"cash_rvol20": 3.0})["call_grade"], "PRIME")
+        self.assertEqual(call_grade({"cash_rvol20": 2.99})["call_grade"], "STANDARD")
+        self.assertEqual(call_grade({})["call_grade"], "STANDARD")
+        self.assertIn("5-minute close", call_grade({"cash_rvol20": 4})["call_grade_note"])
