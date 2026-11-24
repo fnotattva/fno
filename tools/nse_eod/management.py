@@ -16,6 +16,10 @@ DEFAULT_HOLDING_MAX_SESSIONS = 10
 FIRST_REVIEW_SESSION = 5
 SECOND_REVIEW_SESSION = 7
 HORIZONS_FOR_VALIDATION = (5, 7, 10, 15)
+# Replay finding (docs/nse-eod-backtest-findings.md, management section): the
+# day-7 stagnation exit and the two-session opposing-OI exit cut trades that
+# on average recovered. When False they are reported as cautions, not exits.
+HARD_EVIDENCE_EXITS = False
 
 
 def positive(value):
@@ -131,7 +135,12 @@ def review_research_plans(prior, asof, cash, snapshots, derivatives_trails=None)
             max_hold = DEFAULT_HOLDING_MAX_SESSIONS
             # Suggested new stop applies from NEXT session; never retroactively
             # pretend a newly suggested stop was active during today's candle.
-            previous_suggested = positive(previous.get("suggested_stop_if_filled")) or stop
+            # A trailed stop only exists once a position could exist. Stops
+            # proposed while the idea was still PENDING (no entry-level touch)
+            # are ignored: for pullback plans they can sit beyond the entry
+            # and would "stop out" the very fill the plan was waiting for.
+            previous_suggested = (positive(previous.get("suggested_stop_if_filled"))
+                                  if previous.get("first_entry_level_touch") else None) or stop
             effective_old_stop = max(stop,previous_suggested) if side>0 else min(stop,previous_suggested)
             candidate_support = (ema-side*.40*atr)
             nearest_support = positive(tech.get("prev5_low" if side>0 else "prev5_high"))
@@ -147,6 +156,8 @@ def review_research_plans(prior, asof, cash, snapshots, derivatives_trails=None)
             # violated, so explain EXIT/REASSESS rather than publish it.
             suggested = (round(stop_candidate,2) if side*(close-stop_candidate)>.15*atr
                          else round(effective_old_stop,2))
+            if not first_touched:
+                suggested = round(stop,2)  # no trailing before any possible entry
             # Reassess T1 if a new opposing OI wall lies between entry and old T1.
             opposing = positive(chain.get("near_call_wall" if side>0 else "near_put_wall"))
             rechecked_t1 = t1
@@ -187,10 +198,17 @@ def review_research_plans(prior, asof, cash, snapshots, derivatives_trails=None)
                     action = "EXIT IF FILLED / DO NOT INITIATE: OI REVERSAL + TECHNICAL DETERIORATION"
                     terminal = True
                 elif two_day_opposing_oi and sign_close <= 0:
-                    action = ("EXIT IF FILLED / DO NOT INITIATE: TWO CONSECUTIVE "
-                              "VERIFIED SAME-CONTRACT OPPOSING FUTURES BUILDUP "
-                              "SESSIONS, CASH PRICE NO LONGER FAVOURABLE VS ENTRY")
-                    terminal = True
+                    if HARD_EVIDENCE_EXITS:
+                        action = ("EXIT IF FILLED / DO NOT INITIATE: TWO CONSECUTIVE "
+                                  "VERIFIED SAME-CONTRACT OPPOSING FUTURES BUILDUP "
+                                  "SESSIONS, CASH PRICE NO LONGER FAVOURABLE VS ENTRY")
+                        terminal = True
+                    else:
+                        action = ("CAUTION IF FILLED (not an exit): TWO CONSECUTIVE "
+                                  "VERIFIED SAME-CONTRACT OPPOSING FUTURES BUILDUP SESSIONS "
+                                  "and cash price no longer favourable vs entry. In the NSE "
+                                  "replay, exiting on this signal did worse than holding to "
+                                  "stop/T1/day 10; do not add, keep the protective stop.")
                 elif side*(close-effective_old_stop) <= 0:
                     action = "EXIT OR REASSESS IF FILLED: PREVIOUS PROTECTIVE STOP IS BREACHED BY EOD CLOSE"
                     terminal = True
@@ -211,16 +229,24 @@ def review_research_plans(prior, asof, cash, snapshots, derivatives_trails=None)
                 elif target_hit[1]:
                     action = "CONSIDER BOOKING AT T2 AND TRAIL REMAINDER IF CONFIRMED FILLED"
                 elif target_hit[0]:
-                    action = "CONSIDER PARTIAL EXIT AT T1; TIGHTEN STOP ONLY FOR CONFIRMED OPEN POSITION"
+                    action = ("T1 REACHED: T1 IS THE PRIMARY EXIT — BOOK MOST/ALL IF FILLED; "
+                              "ANY REMAINDER ONLY WITH A BREAKEVEN-OR-BETTER STOP")
                 elif adverse_futures or (adverse_cash and adverse_macd):
                     action = "REDUCE/EXIT IF FILLED; THESIS WEAKENING — RECHECK NEW CASH STRUCTURE AND OI"
                 elif (held_scenario >= SECOND_REVIEW_SESSION
                       and sign_close < .20*abs(t1-entry)
                       and not aligned_futures):
-                    action = ("EARLY EXIT IF FILLED AT DAY-7 STAGNATION REVIEW: "
-                              "less than 20% of the entry-to-T1 move achieved "
-                              "and no fresh aligned futures buildup.")
-                    terminal = True
+                    if HARD_EVIDENCE_EXITS:
+                        action = ("EARLY EXIT IF FILLED AT DAY-7 STAGNATION REVIEW: "
+                                  "less than 20% of the entry-to-T1 move achieved "
+                                  "and no fresh aligned futures buildup.")
+                        terminal = True
+                    else:
+                        action = ("DAY-7 STAGNATION REVIEW IF FILLED (caution, not an exit): "
+                                  "less than 20% of the entry-to-T1 move achieved and no fresh "
+                                  "aligned futures buildup. In the NSE replay an automatic exit "
+                                  "here did not help; hold with the protective stop to T1 or "
+                                  "the day-10 time exit unless new adverse evidence appears.")
                 elif (held_scenario >= FIRST_REVIEW_SESSION
                       and sign_close < .20*abs(t1-entry)):
                     action = ("DAY-5 PROGRESS REVIEW IF FILLED: little movement "
@@ -230,7 +256,14 @@ def review_research_plans(prior, asof, cash, snapshots, derivatives_trails=None)
                     action = "HOLD IF CONFIRMED FILLED, WITH UPDATED PROTECTIVE STOP NEXT SESSION"
                 else:
                     action = "REASSESS IF FILLED; PRICE BELOW/ABOVE ENTRY AGAIN — DO NOT ADD"
+            cautions = []
+            if first_touched and two_day_opposing_oi and sign_close <= 0:
+                cautions.append("Two consecutive verified opposing same-contract futures buildup sessions")
+            if (first_touched and held_scenario >= SECOND_REVIEW_SESSION
+                    and sign_close < .20*abs(t1-entry) and not aligned_futures):
+                cautions.append("Day-7 stagnation: <20% of entry-to-T1 move and no fresh aligned buildup")
             update={
+                "evidence_cautions":cautions,
                 "id":sid,"symbol":symbol,"direction":sig["direction"],
                 "market_date":sig.get("market_date"),"asof":asof.isoformat(),
                 "status":status, "action_if_filled":action,

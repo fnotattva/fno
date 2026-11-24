@@ -157,3 +157,56 @@ python analyze.py out.jsonl --features
 
 The replay is an offline research tool. It is not part of the scheduled workflow and
 places no orders.
+
+## Daily plan management (lifecycle) replay — 24 Nov 2026
+
+`tools/nse_eod/backtest/mgmt_replay.py` calls the production
+`management.review_research_plans` on every session after each plan is issued, exactly
+as `runner.main` does. Its advice is executed with EOD discipline:
+- an exit advised at EOD happens at the **next open**;
+- a suggested stop applies from the next session;
+- there is a time exit at the close of holding session 10.
+
+The comparison covers 212 filled plans, Mar 2025 – Nov 2026, with split-affected trades
+excluded.
+
+| Exit approach | Avg R | Win % |
+|---|---:|---:|
+| T1 / original stop / day-10 close | **+0.155** | 58% |
+| T1 + daily management (code as of 24 Nov) | +0.114 | 56% |
+| Half at T1, rest managed to T3 | +0.062 | 53% |
+| Managed to T3 (no T1 exit) | +0.025 | 37% |
+
+Daily management *reduced* results by **−0.041R per trade** (90% CI −0.08 to −0.01),
+and the reduction was the same in 2025 (−0.042) and 2026 (−0.040).
+
+Cause, by exit rule:
+
+| Exit rule | Trades | Avg R with the exit | Same trades held to T1/stop |
+|---|---:|---:|---:|
+| "Previously proposed trailing stop touched" | 10 | +0.15 | **+0.71** |
+| Day-7 stagnation exit | 16 | −0.09 | −0.00 |
+| Two consecutive opposing-OI sessions | 6 | −0.24 | −0.07 |
+
+The first row is a **bug**. Stops were trailed while the plan was still *pending*, before
+any entry. For pullback plans they could sit beyond the entry, so the intended fill
+"stopped out" at once.
+
+Fixes (`management.py`):
+1. **No trailing before an entry-level touch.** Pre-entry suggestions stored in older
+   state are ignored.
+2. **Day-7 stagnation and two-session opposing-OI are now cautions, not forced exits.**
+   They are still shown in every review (`evidence_cautions`). `HARD_EVIDENCE_EXITS = True`
+   restores the old behaviour.
+
+These two exit rules were judged on small samples (16 and 6 trades). The bug fix is
+unambiguous.
+
+| Management version | vs T1/stop/day-10 |
+|---|---:|
+| Before the fixes | −0.041R |
+| Bug fix only | −0.014R |
+| Bug fix + cautions (adopted) | **−0.005R** (no measurable harm) |
+
+**T1 remains the primary exit.** Holding for T2/T3 or scaling out was worse in every
+version.

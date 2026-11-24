@@ -507,6 +507,7 @@ def render(data):
                     f"- **Risk/stop:** original ₹{u['original_stop']:.2f}; previous model stop ₹{u['prior_suggested_stop']:.2f}; proposed NEXT-session stop ₹{u['suggested_stop_next_session_if_filled']:.2f}. Never loosen if already protected tighter.",
                     f"- **Targets:** original T1/T2/T3 ₹{' / ₹'.join(f'{t:.2f}' for t in u['original_targets'])}; new conditional T1 ₹{u['updated_t1_if_filled']:.2f}. {u['target_note']}.",
                     f"- **Updated fundamentals of setup:** futures {u['futures_regime_today']} (price {u['futures_price_change_pct']:+.2f}% / OI {u['futures_oi_change_pct']:+.2f}%); EMA20 ₹{u['ema20']:.2f}, RSI14 {u['rsi14']:.1f}, MACD histogram {u['macd_hist']:+.4f}, opposing options wall {u['opposing_oi_wall'] or 'unavailable'}.",
+                    f"- **Evidence cautions (reported, NOT automatic exits):** {'; '.join(u.get('evidence_cautions') or []) or 'none'}.",
                     f"- **Elapsed sessions:** {u['observed_sessions_since_signal']} since issue; {u['hypothetical_holding_sessions']} hypothetical holding observations; provisional exit horizon {u.get('provisional_max_holding_sessions',10)} NSE sessions, remaining {u.get('hypothetical_sessions_remaining','unknown')}. Actual trade status: {u['fill_status']}.",
                 ]
             cash_hist=u.get("dated_cash_evidence",{})

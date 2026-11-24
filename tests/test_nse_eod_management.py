@@ -111,8 +111,44 @@ class LifecycleTests(unittest.TestCase):
             updates,kept=self.review(item,d,hi=109,lo=106,close=106.1,snap=snapshot)
             if kept: item=kept[0]
         self.assertIn("DAY-7 STAGNATION",updates[0]["action_if_filled"])
-        self.assertTrue(updates[0]["terminal_for_scenario"])
-        self.assertEqual(kept,[])
+        # Replay evidence: a caution, not a forced exit (HARD_EVIDENCE_EXITS False)
+        self.assertIn("caution, not an exit",updates[0]["action_if_filled"])
+        self.assertFalse(updates[0]["terminal_for_scenario"])
+        self.assertTrue(any("Day-7" in c for c in updates[0]["evidence_cautions"]))
+        self.assertEqual(len(kept),1)
+
+    def test_day_seven_hard_exit_restorable_by_switch(self):
+        import management
+        management.HARD_EVIDENCE_EXITS=True
+        try:
+            item=self.item
+            futures={**self.snap["future"],"SttlmPric":"100",
+                     "PrvsClsgPric":"100","ChngInOpnIntrst":"0"}
+            snapshot={**self.snap,"future":futures}
+            for d in ["2026-11-12","2026-11-13","2026-11-16","2026-11-17",
+                      "2026-11-18","2026-11-19","2026-11-20"]:
+                updates,kept=self.review(item,d,hi=109,lo=106,close=106.1,snap=snapshot)
+                if kept: item=kept[0]
+            self.assertIn("EARLY EXIT",updates[0]["action_if_filled"])
+            self.assertTrue(updates[0]["terminal_for_scenario"])
+        finally:
+            management.HARD_EVIDENCE_EXITS=False
+
+    def test_no_trailing_stop_while_entry_still_pending(self):
+        # Pullback-style plan: entry below the market; price stays above entry.
+        sig={**self.sig,"signal_id":"20261111-PB-LONG-C-EXPERTPLAN",
+             "entry_trigger":104.0,"stop_loss":101.0,
+             "entry_pattern":"pullback to prior 20-session high, then bullish 5-minute reclaim"}
+        item={**self.item,"signal":sig}
+        u,k=self.review(item,"2026-11-12",hi=109,lo=105,close=108)
+        self.assertFalse(u[0]["entry_price_level_ever_touched"])
+        self.assertEqual(u[0]["suggested_stop_next_session_if_filled"],101.0)
+        # A legacy pre-entry suggestion above the entry must not 'stop out' the fill.
+        legacy={**k[0],"suggested_stop_if_filled":105.5}
+        u2,_=self.review(legacy,"2026-11-13",hi=106,lo=103.8,close=105)
+        self.assertTrue(u2[0]["entry_price_level_ever_touched"])
+        self.assertNotIn("TRAILING-STOP",u2[0]["status"])
+        self.assertFalse(u2[0]["terminal_for_scenario"])
 
     def test_ten_trading_sessions_hard_scenario_time_exit(self):
         item=self.item

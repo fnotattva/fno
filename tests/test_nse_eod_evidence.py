@@ -183,7 +183,10 @@ class HistoricalEvidenceTests(unittest.TestCase):
         self.assertTrue(updates[0]
                         ["two_verified_consecutive_adverse_futures_oi_days"])
         self.assertIn("TWO CONSECUTIVE",updates[0]["action_if_filled"])
-        self.assertEqual(keep,[])
+        # Replay evidence: reported as a caution, plan stays under review.
+        self.assertIn("not an exit",updates[0]["action_if_filled"])
+        self.assertFalse(updates[0]["terminal_for_scenario"])
+        self.assertEqual(len(keep),1)
 
 if __name__=="__main__":
     unittest.main()
