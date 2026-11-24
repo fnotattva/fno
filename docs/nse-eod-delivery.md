@@ -44,3 +44,22 @@ Sources:
 
 For Wednesday 2026-11-11, wait for verified current-session NSE FO/CM
 archives after the close; do not use 9 November prices as 11 November data.
+
+## v2 delivery additions (24 Nov 2026)
+
+The delivering bot should additionally:
+- Report `coverage.quality_gate_demoted_to_watch` and list demoted names under C-watch
+  with their `quality_gate_reasons`. Never restore demoted levels as calls.
+- For each plan, state:
+  - `trend_maturity_atr`
+  - `fno_breadth_above_ema20`, and any `market_chase_caution`
+  - `all_expiry_futures_oi_change_pct`
+  - `rollover_distortion_possible`
+  - `t1_capped` and `structural_net_rr`. When T1 is capped, say the structural level
+    is now the next target.
+- Present T1 as the primary exit, because replay evidence favoured a full or major
+  exit at T1 over scaling out to T2/T3.
+- On roll days, `coverage.roll_window_next_contract_used` will be high and B/C ideas
+  appear as WATCH ONLY. This is expected, not a data failure.
+- Cite `docs/nse-eod-backtest-findings.md` for the historical basis. Do not present
+  replay win rates as forecasts.

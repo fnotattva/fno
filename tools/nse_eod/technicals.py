@@ -76,6 +76,51 @@ def _recent_cross(fast, slow, lookback=5):
             return {"direction": "BEARISH", "sessions_ago": len(fast)-1-i}
     return None
 
+CORPORATE_ACTION_GAP = 0.25
+
+# Price ratios produced by common Indian splits (2:1, 5:1, 10:1, 20:1) and
+# bonuses (1:1, 1:2, 1:3, 1:4, 2:1, 3:1, 4:1) plus their reverses.
+_CLEAN_RATIOS = (1/2, 1/3, 1/4, 1/5, 1/10, 1/20, 2/3, 3/4, 4/5, 2, 3, 4, 5, 10)
+
+def _clean_ratio(observed):
+    """Nearest standard split/bonus ratio within 5%, else None (e.g. demerger)."""
+    best = min(_CLEAN_RATIOS, key=lambda r: abs(observed / r - 1))
+    return best if abs(observed / best - 1) <= 0.05 else None
+
+def adjust_corporate_actions(rows):
+    """Back-adjust raw NSE CM OHLCV for splits/bonuses/demergers.
+
+    NSE UDiFF CM PrvsClsgPric is NOT adjusted, so a 1:1 bonus appears as a
+    -50% open gap that corrupts EMA/ATR/RSI/Fibonacci for months. F&O stocks
+    trade inside dynamic price bands, so an open more than 25% away from the
+    prior close is treated as a corporate action. A clean ratio (e.g. 1/2,
+    1/5, 2/3) back-adjusts earlier bars; an unclean ratio truncates history
+    to post-event bars instead of guessing. Returns (rows, events); input
+    dictionaries are never mutated.
+    """
+    out = [dict(r) for r in rows]
+    events = []
+    for i in range(len(out) - 1, 0, -1):
+        prev_close = _num(out[i-1].get("ClsPric"))
+        today_open = _num(out[i].get("OpnPric"))
+        if prev_close <= 0 or today_open <= 0:
+            continue
+        observed = today_open / prev_close
+        if abs(observed - 1) <= CORPORATE_ACTION_GAP:
+            continue
+        ratio = _clean_ratio(observed)
+        if ratio is None:
+            events.append({"index": i, "observed_ratio": round(observed, 4), "action": "HISTORY TRUNCATED"})
+            out = out[i:]
+            break
+        for bar in out[:i]:
+            for key in ("OpnPric", "HghPric", "LwPric", "ClsPric"):
+                bar[key] = str(_num(bar.get(key)) * ratio)
+            bar["TtlTradgVol"] = str(_num(bar.get("TtlTradgVol")) / ratio)
+        events.append({"index": i, "observed_ratio": round(observed, 4),
+                       "applied_ratio": round(ratio, 4), "action": "BACK-ADJUSTED"})
+    return out, events
+
 def compute_technicals(rows):
     """Chronologically ordered *complete* CM candles, latest session included."""
     if len(rows) < MIN_SESSIONS:

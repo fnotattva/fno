@@ -31,7 +31,9 @@ def exceptional_additional_plan(tier, signal):
     aligned = regime in ("LONG BUILDUP", "SHORT BUILDUP")
     oi = _numeric(signal.get("futures_oi_change_pct"))
     rvol = _numeric(signal.get("cash_rvol20"))
-    rr = _numeric(signal.get("modelled_net_rr_t1"))
+    # T1 may be capped at 1.2R (quality.py); judge exceptionality on the
+    # structural opportunity, which is what the original thresholds measured.
+    rr = _numeric(signal.get("structural_net_rr", signal.get("modelled_net_rr_t1")))
     if tier == "B":
         return aligned and oi >= 2.0 and rvol >= 1.5 and rr >= 1.5
     if tier == "C":

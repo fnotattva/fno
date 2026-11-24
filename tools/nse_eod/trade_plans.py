@@ -8,6 +8,8 @@ from __future__ import annotations
 from datetime import date
 from math import isfinite
 
+from quality import T1_CAP_R
+
 
 def _positive(value):
     try:
@@ -125,9 +127,19 @@ def expert_trade_plan(idea, tech, chain, future=None, tier="B"):
     minimum_net_t1_r = .60 if is_c else .75
     if side*(t1-entry) <= 0 or net_rr(t1) < minimum_net_t1_r or abs(t1-entry)/entry > .085:
         return None
+    structural_net_rr = net_rr(t1)
     targets = [t1]
     sources = [deduped[0][1]+" (level-based)"]
-    for level,label in deduped[1:]:
+    remaining_levels = deduped[1:]
+    # Evidence-calibrated T1 cap (see quality.py): structural T1s beyond
+    # ~1.2R were reached too rarely in the NSE replay. The structural level
+    # is kept as the next target rather than discarded.
+    cap = entry + side*T1_CAP_R*risk
+    if side*(t1-cap) > 0:
+        targets = [cap]
+        sources = [f"{T1_CAP_R}R evidence-calibrated cap (structural {deduped[0][1]} lies beyond)"]
+        remaining_levels = deduped
+    for level,label in remaining_levels:
         aim = level-side*buffer
         if side*(aim-targets[-1]) >= max(.35*risk, .2*atr):
             targets.append(aim)
@@ -161,6 +173,8 @@ def expert_trade_plan(idea, tech, chain, future=None, tier="B"):
         "target_3": round(targets[2],2),
         "target_sources": sources,
         "modelled_net_rr_t1": round(net_rr(targets[0]),2),
+        "structural_net_rr": round(structural_net_rr,2),
+        "t1_capped": targets[0] != t1,
         "modelled_net_rr_t2": round(net_rr(targets[1]),2),
         "modelled_net_rr_t3": round(net_rr(targets[2]),2),
         "initial_risk_pct": round(100*risk/entry,2),
@@ -172,8 +186,9 @@ def expert_trade_plan(idea, tech, chain, future=None, tier="B"):
             " only upon separately verified 5-minute CASH confirmation and adequate volume; "
             "recheck gap/slippage, new options OI and news. EOD files CANNOT verify entry. "
             "A retest requires price to return to level then reclaim/reject it, not an automatic resting order."),
-        "exit_rule": ("Initial protective stop on verified actual fill; take/consider partial profits "
-            "at T1/T2, manage remaining at T3 or trail beyond only with new evidence. "
+        "exit_rule": ("Initial protective stop on verified actual fill. T1 is the PRIMARY exit: "
+            "in the NSE replay, booking most of the position at T1 outperformed scaling "
+            "toward T2/T3; hold any remainder only with a breakeven-or-better stop. "
             "Continue EOD HOLD/TIGHTEN/EXIT reviews until the stop/trailing stop is touched, "
             "T3 is touched, or new futures OI/price/technical evidence supports exit. "
             "Pending entry expires after two sessions; IF FILLED use a provisional "

@@ -16,6 +16,8 @@ from management import review_research_plans
 from evidence import (build_cash_paths, price_path_evidence, fetch_fo_evidence,
                       derivatives_evidence)
 from shortlist import choose_daily_shortlist
+from technicals import adjust_corporate_actions
+from quality import quality_gate, demote_to_watch, market_breadth, market_context, trend_maturity_atr
 
 IST = ZoneInfo("Asia/Kolkata")
 OUTPUT = Path("out")
@@ -36,6 +38,32 @@ def equity_rows(rows, universe=None):
             result[sym] = row
     return result
 
+ROLL_WINDOW_DAYS = 3
+
+def analysis_contract(rows, asof):
+    """Contract to analyse for one stock, rollover-aware.
+
+    Normally the nearest expiry. Inside the final ROLL_WINDOW_DAYS before that
+    expiry the next contract is used instead (previously the stock was simply
+    excluded, so the whole universe went dark on roll days). In that window,
+    single-contract OI is dominated by rollover (front OI collapses, next OI
+    swells), so the analysed row carries SAME-DAY all-expiry OI and OI change.
+    This sums concurrent contracts on one date; it never splices OI histories
+    across expiries.
+    """
+    ordered = sorted(rows, key=expiry)
+    front = ordered[0]
+    if expiry(front) > asof + timedelta(days=ROLL_WINDOW_DAYS):
+        return front, False
+    later = [r for r in ordered if expiry(r) > asof + timedelta(days=ROLL_WINDOW_DAYS)]
+    if not later:
+        return front, False
+    row = dict(later[0])
+    row["OpnIntrst"] = str(sum(num(r.get("OpnIntrst")) for r in rows))
+    row["ChngInOpnIntrst"] = str(sum(num(r.get("ChngInOpnIntrst")) for r in rows))
+    row["_roll_window_all_expiry_oi"] = True
+    return row, True
+
 def build_market_summary(asof, fo, cm, hist):
     futures = defaultdict(list)
     option_chains = defaultdict(list)
@@ -52,13 +80,31 @@ def build_market_summary(asof, fo, cm, hist):
     for old_date, old_rows in hist.items():
         for sym, row in equity_rows(old_rows, set(futures)).items():
             history_by_symbol[sym].append((old_date, row))
+    # Same-day, all-expiry futures OI per symbol. Summing CONCURRENT contracts
+    # on one date (not splicing histories across rolls) neutralises expiry-week
+    # rollover, when front-month OI falls only because positions move forward.
+    all_expiry = defaultdict(lambda: [0.0, 0.0])
+    for sym, rows in futures.items():
+        for row in rows:
+            all_expiry[sym][0] += num(row.get("OpnIntrst"))
+            all_expiry[sym][1] += num(row.get("ChngInOpnIntrst"))
+    adjusted_cache = {}
+    def technical_history(sym):
+        if sym not in adjusted_cache:
+            series = sorted(history_by_symbol.get(sym, []), key=lambda pair: pair[0])
+            series.append((asof, stocks[sym]))
+            bars, events = adjust_corporate_actions([entry for _, entry in series])
+            adjusted_cache[sym] = (tech_metrics(bars), events)
+        return adjusted_cache[sym]
     picks = []
     snapshots = {}
     regimes = Counter()
     covered = Counter()
     regime_observations = []
     for sym, rows in futures.items():
-        front = min(rows, key=expiry)
+        front, rolled = analysis_contract(rows, asof)
+        if rolled:
+            covered["roll_window_next_contract_used"] += 1
         ex = expiry(front)
         oi, d_oi = num(front.get("OpnIntrst")), num(front.get("ChngInOpnIntrst"))
         fp, prev_fp = num(front.get("SttlmPric")) or num(front.get("ClsPric")), num(front.get("PrvsClsgPric"))
@@ -70,13 +116,14 @@ def build_market_summary(asof, fo, cm, hist):
         cm_chain = chain_metrics(options, num(stocks[sym].get("ClsPric")))
         if not cm_chain: covered["incomplete_chain"] += 1; continue
         covered["valid_chain"] += 1
-        series = sorted(history_by_symbol.get(sym, []), key=lambda pair: pair[0])
-        series.append((asof, stocks[sym]))
-        tech = tech_metrics([entry for _, entry in series])
+        tech, ca_events = technical_history(sym)
+        if ca_events:
+            covered["corporate_action_history_adjusted"] += 1
         if not tech: covered["insufficient_cash_history"] += 1; continue
         covered["valid_history_and_chain"] += 1
         snapshots[sym]={"future":front,"chain":cm_chain,"tech":tech}
-        if ex <= asof + timedelta(days=3):
+        # A-tier behaviour is unchanged: no strict scan inside the roll window.
+        if rolled or ex <= asof + timedelta(days=ROLL_WINDOW_DAYS):
             covered["near_expiry_excluded"] += 1; continue
         item = research_candidate(sym, front, cm_chain, tech, asof)
         if item:
@@ -107,12 +154,10 @@ def build_market_summary(asof, fo, cm, hist):
     for symbol, contracts in futures.items():
         if symbol in primary_symbols or symbol not in stocks:
             continue
-        front = min(contracts, key=expiry)
-        if expiry(front) <= asof + timedelta(days=3):
+        front, _ = analysis_contract(contracts, asof)
+        if expiry(front) <= asof + timedelta(days=ROLL_WINDOW_DAYS):
             continue
-        history = sorted(history_by_symbol.get(symbol, []), key=lambda t:t[0])
-        history.append((asof, stocks[symbol]))
-        technical = tech_metrics([bar for _, bar in history])
+        technical, _ = technical_history(symbol)
         if technical is None:
             continue
         options = option_chains.get((symbol, expiry(front))) or []
@@ -140,15 +185,50 @@ def build_market_summary(asof, fo, cm, hist):
     existing_symbols = {item["symbol"] for item in plans+c_plans}
     buildup_plans = [item for item in buildup_plans if item["symbol"] not in existing_symbols]
     c_plans.extend(buildup_plans)
+    # Evidence-calibrated quality gate (quality.py): B/C plans that fail are
+    # disclosed as WATCH ONLY with the reason, never silently dropped.
+    breadth = market_breadth(snapshots)
+    demoted = []
+    def gate(group):
+        kept = []
+        for plan in group:
+            tech = (snapshots.get(plan["symbol"]) or {}).get("tech") or adjusted_cache.get(plan["symbol"], (None,))[0]
+            rolled = bool(((snapshots.get(plan["symbol"]) or {}).get("future") or {}).get("_roll_window_all_expiry_oi"))
+            ok, reasons = quality_gate(plan, tech, roll_window=rolled)
+            if ok:
+                kept.append(plan)
+            else:
+                demoted.append(demote_to_watch(plan, reasons))
+        return kept
+    plans, c_plans = gate(plans), gate(c_plans)
+    for plan in picks + plans + c_plans:
+        sym = plan["symbol"]
+        tech = (snapshots.get(sym) or {}).get("tech") or adjusted_cache.get(sym, (None,))[0]
+        maturity = trend_maturity_atr(tech, plan["direction"])
+        plan["trend_maturity_atr"] = round(maturity, 2) if maturity is not None else None
+        plan.update(market_context(plan["direction"], breadth))
+        total_oi, total_delta = all_expiry.get(sym, (0.0, 0.0))
+        all_pct = pct(total_oi, total_oi-total_delta) if total_oi-total_delta > 0 else None
+        plan["all_expiry_futures_oi_change_pct"] = round(all_pct, 2) if all_pct is not None else None
+        front_pct = plan.get("futures_oi_change_pct")
+        plan["roll_window_next_contract_all_expiry_oi"] = bool(
+            ((snapshots.get(sym) or {}).get("future") or {}).get("_roll_window_all_expiry_oi"))
+        plan["rollover_distortion_possible"] = bool(
+            all_pct is not None and front_pct is not None
+            and abs(front_pct) >= .5 and (front_pct > 0) != (all_pct > 0))
+    covered["quality_gate_demoted_to_watch"] = len(demoted)
+    covered["fno_breadth_above_ema20"] = round(breadth, 3) if breadth is not None else None
     covered["futures_buildup_universe_evaluated"] = buildup_evaluated
     covered["futures_buildup_plans_pre_shortlist"] = len(buildup_plans)
+    # With T1 capped, RVOL (the most consistent replay discriminator) ranks
+    # ahead of the modelled R of the structural level.
     plans.sort(key=lambda item: (
-        item["pattern_priority"], item["modelled_net_rr_t1"],
-        item["cash_rvol20"], abs(item["futures_oi_change_pct"])
+        item["pattern_priority"], item["cash_rvol20"],
+        item.get("structural_net_rr", item["modelled_net_rr_t1"]), abs(item["futures_oi_change_pct"])
     ), reverse=True)
     c_plans.sort(key=lambda item: (
-        item["pattern_priority"], item["modelled_net_rr_t1"],
-        item["cash_rvol20"],abs(item["futures_oi_change_pct"])
+        item["pattern_priority"], item["cash_rvol20"],
+        item.get("structural_net_rr", item["modelled_net_rr_t1"]), abs(item["futures_oi_change_pct"])
     ), reverse=True)
     alternatives.sort(key=lambda item: (
         item["pattern_priority"], item["relative_volume"],
@@ -157,7 +237,10 @@ def build_market_summary(asof, fo, cm, hist):
     covered["expert_trade_plan_candidates"] = len(plans)
     covered["expert_c_trade_plan_candidates"] = len(c_plans)
     covered["expert_watch_candidates"] = len(alternatives)
-    return (picks, plans, c_plans, alternatives[:3],
+    # Quality-demoted plans are shown first among WATCH ideas: they were full
+    # plans that failed only the calibrated filter, so the reader sees why.
+    alternatives = demoted + alternatives
+    return (picks, plans, c_plans, alternatives[:3 + len(demoted)],
             regime_observations[:5], dict(covered), dict(regimes), len(futures),snapshots)
 
 def buildup_watch_candidate(symbol, future, chain, tech, asof):
@@ -308,6 +391,13 @@ def render(data):
                   f"- Structurally qualified additional C plans before shortlist: {coverage['futures_buildup_plans_pre_shortlist']}.",
                   "- Price and OI alone are NOT calls: a coherent stop, independently grounded T1, adequate net R and fresh entry confirmation remain mandatory.",
                   ""]
+    if data.get("coverage", {}).get("quality_gate_demoted_to_watch") is not None:
+        coverage = data["coverage"]
+        lines += ["## Evidence-calibrated quality gate (B/C plans)",
+                  f"- B/C plans demoted to WATCH ONLY today: {coverage['quality_gate_demoted_to_watch']} (need cash RVOL20 >= 2.0x, EMA20-EMA50 gap < 1.2 ATR in trade direction; C-tier issues pullback/retest entries only; T1 capped at 1.2R).",
+                  f"- F&O breadth (share of covered stocks above EMA20): {coverage.get('fno_breadth_above_ema20')}. Corporate-action-adjusted histories today: {coverage.get('corporate_action_history_adjusted', 0)}.",
+                  "- Basis: no-lookahead replay of this engine on official NSE archives, Mar 2025-Nov 2026 (docs/nse-eod-backtest-findings.md). Historical, EOD-simulated, modest samples: NOT a win-rate guarantee.",
+                  ""]
     if data.get("shortlist_policy"):
         policy=data["shortlist_policy"]
         lines += [
@@ -334,6 +424,7 @@ def render(data):
                   f"- **Momentum:** RSI14 {c['rsi14']:.1f}; MACD {c['macd']:+.3f}, signal {c['macd_signal']:+.3f}, histogram {c['macd_hist']:+.3f}; recent MACD cross: {c['macd_crossover'] or 'none'}.",
                   f"- **Fibonacci 60-session historical swing:** ₹{c['fib_swing_low60']:.2f}–₹{c['fib_swing_high60']:.2f}; nearby fib support ₹{c['fib_support'] if c['fib_support'] is not None else 'N/A'} / resistance ₹{c['fib_resistance'] if c['fib_resistance'] is not None else 'N/A'}. These are contextual levels, not assured reversal points.",
                   f"- **Evidence:** Futures {c['futures_score']}/40 + Options {c['options_score']}/35 + Technical {c['technical_score']}/25; confirmations: {', '.join(c['technical_reasons'])}.",
+                  f"- **Quality context (A-tier logic unchanged):** RVOL {c['cash_rvol20']:.2f}x (B/C calibrated minimum 2.0x); trend maturity {c.get('trend_maturity_atr')} ATR; F&O breadth {c.get('fno_breadth_above_ema20')}; all-expiry futures OI {c.get('all_expiry_futures_oi_change_pct')}%{' — FRONT-MONTH OI MAY BE ROLLOVER-DISTORTED' if c.get('rollover_distortion_possible') else ''}.{(' CAUTION: ' + c['market_chase_caution'] + '.') if c.get('market_chase_caution') else ''} In the 2025-26 replay A-tier produced too few plans (~1/month) to show a measurable edge.",
                   f"- Options expiry {c['options_expiry']}: max PE OI wall ₹{c['put_wall']:g} (previous ₹{c['previous_put_wall'] or 0:g}), max CE OI wall ₹{c['call_wall']:g} (previous ₹{c['previous_call_wall'] or 0:g}); nearest relevant walls PE ₹{c['near_put_wall'] or 0:g} / CE ₹{c['near_call_wall'] or 0:g}.",
                   f"- Full-chain max pain ₹{c['max_pain']:g} (previous ₹{c['previous_max_pain'] or 0:g}), PCR {c['pcr']:.3f} (previous {c['previous_pcr'] or 0:.3f}); PE/CE OI change {c['pe_oi_change']:+,}/{c['ce_oi_change']:+,}.",
                   f"- Option premium/OI proxies at highest walls: PE {c['put_wall_premium_proxy']['label']} (OI Δ {c['put_wall_premium_proxy']['oi_change']:+,}); CE {c['call_wall_premium_proxy']['label']} (OI Δ {c['call_wall_premium_proxy']['oi_change']:+,}). These do not establish actual writing or covering.",
@@ -355,6 +446,7 @@ def render(data):
                 f"- **T1:** ₹{p['target_1']:.2f} — {p['target_sources'][0]} (modelled net {p['modelled_net_rr_t1']:.2f}R).",
                 f"- **T2:** ₹{p['target_2']:.2f} — {p['target_sources'][1]} (modelled net {p['modelled_net_rr_t2']:.2f}R).",
                 f"- **T3:** ₹{p['target_3']:.2f} — {p['target_sources'][2]} (modelled net {p['modelled_net_rr_t3']:.2f}R, extension only).",
+                f"- **Quality context:** trend maturity {p.get('trend_maturity_atr')} ATR; F&O breadth {p.get('fno_breadth_above_ema20')}; all-expiry futures OI {p.get('all_expiry_futures_oi_change_pct')}%{' — FRONT-MONTH OI MAY BE ROLLOVER-DISTORTED' if p.get('rollover_distortion_possible') else ''}.{(' CAUTION: ' + p['market_chase_caution'] + '.') if p.get('market_chase_caution') else ''}{' T1 capped at 1.2R; structural level moved to T2 (structural net ' + str(p.get('structural_net_rr')) + 'R).' if p.get('t1_capped') else ''}",
                 f"- **Trigger and gap discipline:** {p['entry_condition']} Do NOT chase beyond CASH ₹{p['gap_skip_level']:.2f}. Levels are not stock-futures contract prices.",
                 f"- **Exit/expiry:** {p['exit_rule']}",
                 f"- **What still fails strict A-tier or needs review:** {'; '.join(p['unresolved_evidence'])}. A low T1 R:R can still be unappealing after costs and hit-rate uncertainty; this is NOT an A-tier or guaranteed recommendation.",
@@ -374,6 +466,7 @@ def render(data):
                 f"- **T1 ₹{p['target_1']:.2f} | net {p['modelled_net_rr_t1']:.2f}R** — {p['target_sources'][0]}.",
                 f"- **T2 ₹{p['target_2']:.2f} | net {p['modelled_net_rr_t2']:.2f}R** — {p['target_sources'][1]}.",
                 f"- **T3 ₹{p['target_3']:.2f} | net {p['modelled_net_rr_t3']:.2f}R** — {p['target_sources'][2]}.",
+                f"- **Quality context:** trend maturity {p.get('trend_maturity_atr')} ATR; F&O breadth {p.get('fno_breadth_above_ema20')}; all-expiry futures OI {p.get('all_expiry_futures_oi_change_pct')}%{' — FRONT-MONTH OI MAY BE ROLLOVER-DISTORTED' if p.get('rollover_distortion_possible') else ''}.{(' CAUTION: ' + p['market_chase_caution'] + '.') if p.get('market_chase_caution') else ''}{' T1 capped at 1.2R; structural level moved to T2 (structural net ' + str(p.get('structural_net_rr')) + 'R).' if p.get('t1_capped') else ''}",
                 f"- **Illustrative R benchmarks, NOT imposed targets:** 0.6R ₹{p['rr_reference_points']['0.6R']:.2f}; 1.5R ₹{p['rr_reference_points']['1.5R']:.2f}; 3R ₹{p['rr_reference_points']['3.0R']:.2f}.",
                 f"- **Evidence and caveats:** EMA20 ₹{p['ema20']:.2f}, EMA50 ₹{p['ema50']:.2f}, RSI14 {p['rsi14']:.1f}, MACD histogram {p['macd_hist']:+.4f}; PE wall {p['put_wall'] or 'unavailable'} / CE wall {p['call_wall'] or 'unavailable'}, max pain {p['max_pain'] or 'unavailable'}. {'; '.join(p['unresolved_evidence'])}.",
                 f"- **Lifecycle:** Pending idea expires after {p['valid_for_next_sessions']} trading sessions; if separately confirmed filled, reassess every NSE EOD; provisional hard maximum 10 trading sessions (review at 5, consider early exit at 7 if stalled), sooner on evidence-based EXIT, stop/trailing stop or T3. {p['exit_rule']}",

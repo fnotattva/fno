@@ -43,6 +43,20 @@ NSE_HOLIDAYS_2026 = {
     date(2026, 12, 25): "Christmas",
 }
 
+# Special weekend sessions with official NSE UDiFF CM/FO archives published.
+# These are real trading sessions and must be part of the price history;
+# skipping them leaves a hole in every stock's OHLCV series. Verify each
+# year's Budget-day and Muhurat sessions against NSE circulars.
+NSE_SPECIAL_SESSIONS_2026 = {
+    date(2026, 2, 1): "Union Budget special live trading session (Sunday)",
+    date(2026, 11, 8): "Diwali Muhurat trading session (Sunday)",
+}
+
+def history_session(day: date) -> bool:
+    """True when an official archive should exist for price history:
+    regular sessions plus listed special (Budget/Muhurat) sessions."""
+    return day in NSE_SPECIAL_SESSIONS_2026 or not market_closure(day)
+
 def market_closure(day: date) -> str | None:
     """Return a verified regular NSE cash/F&O closure, or None if not listed.
 
@@ -137,7 +151,7 @@ def cash_history(latest: date, days: int = 115, workers: int = 3,
     history = {}
     errors = {}
     targets = [latest - timedelta(days=d) for d in range(1, days + 1)]
-    targets = [d for d in targets if not market_closure(d)]
+    targets = [d for d in targets if history_session(d)]
     def task(day):
         return day, load("CM", day)
     for start in range(0, len(targets), batch_size):
