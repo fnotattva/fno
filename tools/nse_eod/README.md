@@ -140,5 +140,6 @@ What changed:
 - **Roll days:** the next contract is analysed with same-day all-expiry OI
   (`runner.analysis_contract`) instead of excluding the whole universe.
 - **Strict A-tier logic is unchanged.**
+- **Lifecycle (24 Nov):** no trailing stop before entry (bug fix); day-7 and two-session-OI exits are cautions, not forced exits; monthly monitor `backtest/monitor.py`.
 
 Re-validate monthly with `tools/nse_eod/backtest/` (see its usage in the findings doc).
