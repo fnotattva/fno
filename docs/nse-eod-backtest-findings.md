@@ -210,3 +210,57 @@ unambiguous.
 
 **T1 remains the primary exit.** Holding for T2/T3 or scaling out was worse in every
 version.
+
+## What actually predicts returns? Cross-sectional study (24 Nov 2026)
+
+The panel covers every NSE F&O stock on every session from Dec 2024 to Nov 2026, about
+105,000 stock-days. Inputs are official CM/FO UDiFF and `sec_bhavdata_full` delivery files.
+Returns are measured from the **next open**, relative to the average F&O stock, with
+corporate-action windows excluded. Each signal was tested separately in 2025 and 2026.
+Tools: `backtest/fetch_deliv.py` → `panel.py` → `features.py`.
+
+**OI regimes are context, not signals.**
+- Daily, 3-day and 5-day OI change, PCR change, option-OI flow and call/put walls showed no
+  consistent predictive value: signs flip between years, and t-stats are mostly below 2.
+- In uptrends, a "long unwinding" day was followed by flat-to-better relative returns
+  (2026: +0.16% over 5 days).
+- Front-month "long unwinding" caused by **rollover** (all-expiry OI not falling) was
+  followed by **+0.29% / +0.47%** over 5 days in 2025 / 2026. This is the "bait" pattern.
+- "Short covering" bounces in downtrends kept underperforming.
+- Exiting on OI alone is not supported. The review wording now says so, and day-7 and
+  two-session OI exits are cautions.
+
+**Signals with consistent (small) information, both years:**
+
+| Signal | Effect over 5 sessions (relative) |
+|---|---|
+| Futures premium over spot, top vs bottom fifth (corporate-event extremes excluded) | ≈ +0.33%, monotonic |
+| Delivery % vs its own 20-session average, top vs bottom fifth | ≈ +0.15% |
+| Biggest 1-day gainers / closes near the day's high | ≈ −0.12% (short-term reversal) |
+
+Within the engine's own plans, those whose futures premium ranked **against** the trade did
+worse: the current engine +0.14R vs +0.20R; the old engine −0.10R vs −0.01R.
+
+**What did not improve on the current engine:**
+
+| Idea | Result |
+|---|---|
+| Standalone "pullback + accumulation + premium" setup | −0.01R to −0.08R per trade, all entry/target variants |
+| Hedging each plan with NIFTY futures | Average +0.18R → +0.13R, dispersion unchanged |
+| Combined rank score used as a plan filter | Rejects almost all breakout plans |
+| Removing OI gates from B/C plan construction | +0.18R → +0.18R (no change), so the gates were kept |
+
+**Implications**
+- Edges of end-of-day single-stock ideas are small, about 0.2–0.5% relative over 5–10
+  days. With 2.5–3% stops that caps expectancy near **+0.1 to +0.2R per trade**. Far
+  targets reduce expectancy.
+- Improvements therefore have to come from execution information (intraday confirmation),
+  position sizing and avoiding known traps, not from more EOD indicators.
+
+**Engine changes (v3):**
+- Each plan now shows `futures_premium_pct/rank/caution` and `delivery_pct/rel20` as
+  positioning context. Delivery comes from the official NSE `sec_bhavdata_full`, is
+  best-effort, and its coverage is reported.
+- An opposing OI regime **alone** now produces "HOLD WITH PROTECTIVE STOP — OI CONTEXT
+  ONLY", never "REDUCE/EXIT".
+- "Reduce" is reserved for price evidence: a close beyond EMA20 with MACD against the trade.

@@ -231,8 +231,13 @@ def review_research_plans(prior, asof, cash, snapshots, derivatives_trails=None)
                 elif target_hit[0]:
                     action = ("T1 REACHED: T1 IS THE PRIMARY EXIT — BOOK MOST/ALL IF FILLED; "
                               "ANY REMAINDER ONLY WITH A BREAKEVEN-OR-BETTER STOP")
-                elif adverse_futures or (adverse_cash and adverse_macd):
-                    action = "REDUCE/EXIT IF FILLED; THESIS WEAKENING — RECHECK NEW CASH STRUCTURE AND OI"
+                elif adverse_cash and adverse_macd:
+                    action = ("REDUCE IF FILLED; PRICE THESIS WEAKENING — close beyond EMA20 with "
+                              "MACD against the trade; keep the protective stop")
+                elif adverse_futures:
+                    action = ("HOLD IF FILLED WITH PROTECTIVE STOP — OI CONTEXT ONLY: today's futures "
+                              "regime opposes the trade, but in the 2025-26 NSE replay single-day OI "
+                              "regimes had no predictive value (and often reverse); not an exit signal")
                 elif (held_scenario >= SECOND_REVIEW_SESSION
                       and sign_close < .20*abs(t1-entry)
                       and not aligned_futures):

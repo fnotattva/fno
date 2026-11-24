@@ -120,3 +120,57 @@ def demote_to_watch(plan, reasons):
         "quality_gate_reasons": reasons,
         "not_a_call": True, "recommendation": None,
     }
+
+
+# --- Context signals from the 2025-26 cross-sectional study (24 Nov 2026) ---
+# Futures premium over spot: highest-premium fifth beat the lowest by ~0.33% over
+# 5 sessions in BOTH years; engine plans whose premium rank opposed the trade did
+# worse in both engine versions. Delivery % above its own 20-session average
+# mildly predicted outperformance. Both are CONTEXT/CAUTION, never entry/exit
+# triggers. Single-day OI regimes showed no predictive value.
+PREMIUM_AGAINST_RANK = 0.40
+PREMIUM_DISTORTION_ABS = 0.03
+
+
+def futures_premium_ranks(snapshots):
+    """{symbol: (premium, rank)} from analysed futures settlement vs underlying."""
+    raw = {}
+    for sym, snap in (snapshots or {}).items():
+        fut = (snap or {}).get("future") or {}
+        settle, under = _f(fut.get("SttlmPric")) or _f(fut.get("ClsPric")), _f(fut.get("UndrlygPric"))
+        if settle and under and under > 0:
+            raw[sym] = settle / under - 1
+    normal = sorted(v for v in raw.values() if abs(v) <= PREMIUM_DISTORTION_ABS)
+    out = {}
+    for sym, prem in raw.items():
+        if abs(prem) > PREMIUM_DISTORTION_ABS or len(normal) < 20:
+            out[sym] = (prem, None)
+            continue
+        below = sum(1 for v in normal if v < prem)
+        out[sym] = (prem, below / (len(normal) - 1) if len(normal) > 1 else None)
+    return out
+
+
+def premium_context(direction, premium, rank):
+    if premium is None:
+        return {"futures_premium_pct": None, "futures_premium_rank": None, "futures_premium_caution": None}
+    note = None
+    if rank is None:
+        note = ("Futures premium/discount unusually large; often a dividend, buyback or other corporate "
+                "event. Check the corporate-action calendar before acting")
+    else:
+        against = rank < PREMIUM_AGAINST_RANK if direction == "LONG" else rank > 1 - PREMIUM_AGAINST_RANK
+        if against:
+            note = ("Futures premium ranks against the trade direction; in the NSE replay such plans "
+                    "did worse (also check for an upcoming ex-dividend date)")
+    return {"futures_premium_pct": round(100 * premium, 3),
+            "futures_premium_rank": round(rank, 2) if rank is not None else None,
+            "futures_premium_caution": note}
+
+
+def delivery_context(symbol, today, history):
+    """Delivery % today and relative to its own prior-20-session average (context only)."""
+    pct = (today or {}).get(symbol)
+    past = [day[symbol] for day in (history or []) if symbol in day][-20:]
+    rel = pct / (sum(past) / len(past)) if pct is not None and len(past) >= 10 and sum(past) > 0 else None
+    return {"delivery_pct": pct, "delivery_rel20": round(rel, 2) if rel is not None else None}

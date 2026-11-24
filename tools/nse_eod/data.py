@@ -9,7 +9,7 @@ import urllib.error
 import urllib.parse
 import http.cookiejar
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 MAX_BYTES = 24 * 1024 * 1024
 ROOT = "https://nsearchives.nseindia.com/content"
@@ -131,6 +131,56 @@ def load(segment: str, day: date) -> list[dict[str, str]]:
         if not any(r["FinInstrmTp"] == "STO" for r in rows):
             raise Unavailable("F&O archive missing stock options")
     return rows
+
+DELIVERY_ROOT = "https://nsearchives.nseindia.com/products/content"
+
+def delivery_url(day: date) -> str:
+    return f"{DELIVERY_ROOT}/sec_bhavdata_full_{day:%d%m%Y}.csv"
+
+def load_delivery(day: date) -> dict[str, float]:
+    """Official NSE security-wise delivery % (EQ series) for one session.
+
+    Context only. Raises Unavailable on any download/format problem so callers
+    can record the gap instead of inventing values.
+    """
+    blob = _download(delivery_url(day))
+    text = blob.decode("utf-8-sig", errors="strict")
+    rows = list(csv.reader(io.StringIO(text)))
+    if not rows or "DELIV_PER" not in [c.strip() for c in rows[0]]:
+        raise Unavailable("Unexpected delivery file schema")
+    head = [c.strip() for c in rows[0]]
+    i_sym, i_ser, i_date, i_del = (head.index(k) for k in ("SYMBOL", "SERIES", "DATE1", "DELIV_PER"))
+    out = {}
+    for r in rows[1:]:
+        if len(r) <= i_del or r[i_ser].strip() != "EQ":
+            continue
+        try:
+            when = datetime.strptime(r[i_date].strip(), "%d-%b-%Y").date()
+            pct_value = float(r[i_del].strip())
+        except ValueError:
+            continue
+        if when != day:
+            raise Unavailable(f"Delivery file date mismatch: {when}")
+        out[r[i_sym].strip()] = pct_value
+    if not out:
+        raise Unavailable("Delivery file has no EQ rows")
+    return out
+
+def delivery_history(days: list[date], workers: int = 3):
+    """Best-effort delivery % for several sessions: ({day: {sym: pct}}, errors)."""
+    found, errors = {}, {}
+    def task(day):
+        return day, load_delivery(day)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(task, d): d for d in days}
+        for fut in as_completed(futures):
+            day = futures[fut]
+            try:
+                key, rows = fut.result()
+                found[key] = rows
+            except (Unavailable, ValueError, UnicodeDecodeError) as exc:
+                errors[day.isoformat()] = str(exc)[:160]
+    return found, errors
 
 def most_recent(asof: date, back_days: int = 8):
     errors = []

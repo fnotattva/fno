@@ -70,6 +70,11 @@ fills or P&L, never invent levels.
   to `coverage.fno_breadth_above_ema20`.
 - If a connector is unavailable, say so in one line and continue.
 
+**E6b. OI is context, not a trigger.** Never present a single-day OI regime
+(long unwinding, short covering, etc.) as a reason to exit or reverse. The 2025-26 study
+found no predictive value, and rollover often fakes "unwinding". Show
+`futures_premium_caution` and `delivery_pct` / `delivery_rel20` as positioning context.
+
 **E7. Deliver one standalone report.** Follow the template in
 `docs/nse-eod-delivery.md` and `README.md`, plus the v2 fields:
 - `quality_gate_reasons` for demoted ideas, `trend_maturity_atr` and `market_chase_caution`.
