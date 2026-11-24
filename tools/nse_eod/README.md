@@ -114,3 +114,31 @@ The daily 21:15 IST ChatGPT delivery must distinguish **A. Strict A-tier**, **B.
 - At the time these changes were made, the previous **11 November 2026** successfully archived analysis had 218 stock-futures symbols, 218 complete options chains, 217 symbols with usable cash history, 72 historical CM sessions and one insufficient-history symbol. Historical F&O files are fetched on subsequent valid scan sessions where older tracked cases and a current-session archive are present; tests alone do not prove a fresh same-day multi-archive download.
 
 **Primary source references:** https://www.nseindia.com/all-reports and https://www.nseindia.com/all-reports-derivatives . Both list the current CM and F&O UDiFF Final reports, respectively. Official exchange reports are observations, not a forecast or proof of an executable strategy.
+
+## 24 November 2026 — v2 evidence-calibrated accuracy update
+
+The production engine was replayed against official NSE UDiFF archives from 20 Mar 2025
+to 23 Nov 2026, covering 415 sessions and about 1,250 plans. The full method and
+numbers are in `docs/nse-eod-backtest-findings.md`.
+
+The baseline had no measurable edge after costs: −0.06R per filled plan and a 46% win
+rate. v2 measured +0.18R with a 59% win rate, and +0.21R on held-out 2026 data. These
+are historical EOD simulations, not guarantees.
+
+What changed:
+- **B/C quality gate (`quality.py`).**
+  - Cash RVOL20 must be ≥ 2.0×.
+  - The EMA20–EMA50 gap must be under 1.2 ATR in the trade direction.
+  - C-tier issues pullback/retest entries only.
+  - Plans formed in the expiry roll window are WATCH ONLY.
+  - Failing plans appear as WATCH ONLY with reasons and are never silently dropped.
+- **B/C T1** is capped at 1.2R. The structural level becomes the next target, and T1
+  is the primary exit.
+- **Corporate-action adjustment** of the technical history (`technicals.adjust_corporate_actions`).
+- **Special sessions** (Budget day, Muhurat) are included in the price history
+  (`data.history_session`).
+- **Roll days:** the next contract is analysed with same-day all-expiry OI
+  (`runner.analysis_contract`) instead of excluding the whole universe.
+- **Strict A-tier logic is unchanged.**
+
+Re-validate monthly with `tools/nse_eod/backtest/` (see its usage in the findings doc).
