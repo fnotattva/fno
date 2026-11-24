@@ -75,6 +75,11 @@ fills or P&L, never invent levels.
 found no predictive value, and rollover often fakes "unwinding". Show
 `futures_premium_caution` and `delivery_pct` / `delivery_rel20` as positioning context.
 
+**E6c. Lead with PRIME calls.** Present `call_grade` = PRIME plans first, as the calls of
+the day, with their 5-minute-close entry rule. Present STANDARD plans afterwards under
+"research / watchlist". Never upgrade a STANDARD plan to PRIME. If there is no PRIME plan,
+say "No PRIME call today".
+
 **E7. Deliver one standalone report.** Follow the template in
 `docs/nse-eod-delivery.md` and `README.md`, plus the v2 fields:
 - `quality_gate_reasons` for demoted ideas, `trend_maturity_atr` and `market_chase_caution`.
@@ -126,6 +131,8 @@ simulation. Following them keeps live use consistent with the tested behaviour.
 **M4.** Context:
 - `cm_get_index_quote("NIFTY 50")` and `cm_get_index_quote("INDIA VIX")`.
 - Today's volume so far for each symbol. Do not compute RVOL from partial-day volume.
+
+**M4b.** List PRIME plans first.
 
 **M5.** Deliver a short table, one row per symbol: classification, levels, LTP and time.
 State clearly that this is a single snapshot at about 09:45, not 5-minute candle

@@ -18,7 +18,8 @@ from evidence import (build_cash_paths, price_path_evidence, fetch_fo_evidence,
 from shortlist import choose_daily_shortlist
 from technicals import adjust_corporate_actions
 from quality import (quality_gate, demote_to_watch, market_breadth, market_context, trend_maturity_atr,
-                     futures_premium_ranks, premium_context, delivery_context)
+                     futures_premium_ranks, premium_context, delivery_context,
+                     call_grade, PRIME_MIN_RVOL)
 from data import delivery_history
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -207,6 +208,7 @@ def build_market_summary(asof, fo, cm, hist):
     for plan in picks + plans + c_plans:
         sym = plan["symbol"]
         plan.update(premium_context(plan["direction"], *premiums.get(sym, (None, None))))
+        plan.update(call_grade(plan))
         tech = (snapshots.get(sym) or {}).get("tech") or adjusted_cache.get(sym, (None,))[0]
         maturity = trend_maturity_atr(tech, plan["direction"])
         plan["trend_maturity_atr"] = round(maturity, 2) if maturity is not None else None
@@ -227,11 +229,11 @@ def build_market_summary(asof, fo, cm, hist):
     # With T1 capped, RVOL (the most consistent replay discriminator) ranks
     # ahead of the modelled R of the structural level.
     plans.sort(key=lambda item: (
-        item["pattern_priority"], item["cash_rvol20"],
+        item["cash_rvol20"] >= PRIME_MIN_RVOL, item["pattern_priority"], item["cash_rvol20"],
         item.get("structural_net_rr", item["modelled_net_rr_t1"]), abs(item["futures_oi_change_pct"])
     ), reverse=True)
     c_plans.sort(key=lambda item: (
-        item["pattern_priority"], item["cash_rvol20"],
+        item["cash_rvol20"] >= PRIME_MIN_RVOL, item["pattern_priority"], item["cash_rvol20"],
         item.get("structural_net_rr", item["modelled_net_rr_t1"]), abs(item["futures_oi_change_pct"])
     ), reverse=True)
     alternatives.sort(key=lambda item: (
@@ -428,6 +430,7 @@ def render(data):
                   f"- **Momentum:** RSI14 {c['rsi14']:.1f}; MACD {c['macd']:+.3f}, signal {c['macd_signal']:+.3f}, histogram {c['macd_hist']:+.3f}; recent MACD cross: {c['macd_crossover'] or 'none'}.",
                   f"- **Fibonacci 60-session historical swing:** ₹{c['fib_swing_low60']:.2f}–₹{c['fib_swing_high60']:.2f}; nearby fib support ₹{c['fib_support'] if c['fib_support'] is not None else 'N/A'} / resistance ₹{c['fib_resistance'] if c['fib_resistance'] is not None else 'N/A'}. These are contextual levels, not assured reversal points.",
                   f"- **Evidence:** Futures {c['futures_score']}/40 + Options {c['options_score']}/35 + Technical {c['technical_score']}/25; confirmations: {', '.join(c['technical_reasons'])}.",
+                  f"- **CALL GRADE: {c.get('call_grade')}** — {c.get('call_grade_note')}",
                   f"- **Positioning context (not triggers):** futures premium {c.get('futures_premium_pct')}% (rank {c.get('futures_premium_rank')}); delivery {c.get('delivery_pct')}% ({c.get('delivery_rel20')}x 20-session avg).{(' CAUTION: ' + c['futures_premium_caution'] + '.') if c.get('futures_premium_caution') else ''}",
                   f"- **Quality context (A-tier logic unchanged):** RVOL {c['cash_rvol20']:.2f}x (B/C calibrated minimum 2.0x); trend maturity {c.get('trend_maturity_atr')} ATR; F&O breadth {c.get('fno_breadth_above_ema20')}; all-expiry futures OI {c.get('all_expiry_futures_oi_change_pct')}%{' — FRONT-MONTH OI MAY BE ROLLOVER-DISTORTED' if c.get('rollover_distortion_possible') else ''}.{(' CAUTION: ' + c['market_chase_caution'] + '.') if c.get('market_chase_caution') else ''} In the 2025-26 replay A-tier produced too few plans (~1/month) to show a measurable edge.",
                   f"- Options expiry {c['options_expiry']}: max PE OI wall ₹{c['put_wall']:g} (previous ₹{c['previous_put_wall'] or 0:g}), max CE OI wall ₹{c['call_wall']:g} (previous ₹{c['previous_call_wall'] or 0:g}); nearest relevant walls PE ₹{c['near_put_wall'] or 0:g} / CE ₹{c['near_call_wall'] or 0:g}.",
@@ -451,6 +454,7 @@ def render(data):
                 f"- **T1:** ₹{p['target_1']:.2f} — {p['target_sources'][0]} (modelled net {p['modelled_net_rr_t1']:.2f}R).",
                 f"- **T2:** ₹{p['target_2']:.2f} — {p['target_sources'][1]} (modelled net {p['modelled_net_rr_t2']:.2f}R).",
                 f"- **T3:** ₹{p['target_3']:.2f} — {p['target_sources'][2]} (modelled net {p['modelled_net_rr_t3']:.2f}R, extension only).",
+                f"- **CALL GRADE: {p.get('call_grade')}** — {p.get('call_grade_note')}",
                 f"- **Positioning context (not triggers):** futures premium {p.get('futures_premium_pct')}% (rank {p.get('futures_premium_rank')}); delivery {p.get('delivery_pct')}% ({p.get('delivery_rel20')}x own 20-session avg).{(' CAUTION: ' + p['futures_premium_caution'] + '.') if p.get('futures_premium_caution') else ''} OI regimes are shown as context only; single-day OI changes did not predict returns in the 2025-26 replay.",
                 f"- **Quality context:** trend maturity {p.get('trend_maturity_atr')} ATR; F&O breadth {p.get('fno_breadth_above_ema20')}; all-expiry futures OI {p.get('all_expiry_futures_oi_change_pct')}%{' — FRONT-MONTH OI MAY BE ROLLOVER-DISTORTED' if p.get('rollover_distortion_possible') else ''}.{(' CAUTION: ' + p['market_chase_caution'] + '.') if p.get('market_chase_caution') else ''}{' T1 capped at 1.2R; structural level moved to T2 (structural net ' + str(p.get('structural_net_rr')) + 'R).' if p.get('t1_capped') else ''}",
                 f"- **Trigger and gap discipline:** {p['entry_condition']} Do NOT chase beyond CASH ₹{p['gap_skip_level']:.2f}. Levels are not stock-futures contract prices.",
@@ -472,6 +476,7 @@ def render(data):
                 f"- **T1 ₹{p['target_1']:.2f} | net {p['modelled_net_rr_t1']:.2f}R** — {p['target_sources'][0]}.",
                 f"- **T2 ₹{p['target_2']:.2f} | net {p['modelled_net_rr_t2']:.2f}R** — {p['target_sources'][1]}.",
                 f"- **T3 ₹{p['target_3']:.2f} | net {p['modelled_net_rr_t3']:.2f}R** — {p['target_sources'][2]}.",
+                f"- **CALL GRADE: {p.get('call_grade')}** — {p.get('call_grade_note')}",
                 f"- **Positioning context (not triggers):** futures premium {p.get('futures_premium_pct')}% (rank {p.get('futures_premium_rank')}); delivery {p.get('delivery_pct')}% ({p.get('delivery_rel20')}x own 20-session avg).{(' CAUTION: ' + p['futures_premium_caution'] + '.') if p.get('futures_premium_caution') else ''} OI regimes are shown as context only; single-day OI changes did not predict returns in the 2025-26 replay.",
                 f"- **Quality context:** trend maturity {p.get('trend_maturity_atr')} ATR; F&O breadth {p.get('fno_breadth_above_ema20')}; all-expiry futures OI {p.get('all_expiry_futures_oi_change_pct')}%{' — FRONT-MONTH OI MAY BE ROLLOVER-DISTORTED' if p.get('rollover_distortion_possible') else ''}.{(' CAUTION: ' + p['market_chase_caution'] + '.') if p.get('market_chase_caution') else ''}{' T1 capped at 1.2R; structural level moved to T2 (structural net ' + str(p.get('structural_net_rr')) + 'R).' if p.get('t1_capped') else ''}",
                 f"- **Illustrative R benchmarks, NOT imposed targets:** 0.6R ₹{p['rr_reference_points']['0.6R']:.2f}; 1.5R ₹{p['rr_reference_points']['1.5R']:.2f}; 3R ₹{p['rr_reference_points']['3.0R']:.2f}.",
